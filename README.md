@@ -1,6 +1,5 @@
 # japaneseKindleScrapper
 ## Motivation 
-## Quick 
-## Start 
+## Quick Start 
 ## Usage 
 ## Contributing
