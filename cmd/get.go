@@ -26,10 +26,12 @@ func GetContents(_ *cobra.Command, args []string) {
 	}
 	c := api.NewClient(5 * time.Second)
 	for _, address := range args {
-		_, err := c.GetAddresses(address)
+		res, err := c.GetAddresses(address)
 		if err != nil {
 			fmt.Printf("Error getting addresses: %v", err)
 			return
 		}
+		fmt.Println(res)
 	}
+
 }

@@ -1,13 +1,19 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/signintech/gopdf"
+)
+
+const (
+	LINEHEIGHT    = 20.0
+	MAXPAGEHEIGHT = 750.0
 )
 
 type urlInfo struct {
@@ -21,25 +27,26 @@ type Chapter struct {
 	contents []string
 }
 
-func (c *Client) GetAddresses(startAddress string) ([]Chapter, error) {
-	var found []Chapter
+func (c *Client) GetAddresses(startAddress string) (string, error) {
 	if startAddress == "" {
-		return []Chapter{}, errors.New("Please introduce a url")
+		return "", nil
 	}
 	urlData, err := getSiteInfo(startAddress)
 	if err != nil {
-		return []Chapter{}, err
+		return "", err
 	}
-	for i := urlData.startIndex; i < urlData.startIndex+1; i++ {
+	var pdfAddress string
+	var chaptersData []Chapter
+	for i := urlData.startIndex; i < urlData.startIndex+2; i++ {
 		fullURL := fmt.Sprintf("%s/%d/", urlData.url, i)
 		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
-			return []Chapter{}, err
+			return "", err
 		}
 		req.Header.Set("User-Agent", "export-novels-to-eReader-app")
 		res, err := c.httpClient.Do(req)
 		if err != nil {
-			return []Chapter{}, err
+			return "", err
 		}
 		defer res.Body.Close()
 		if res.StatusCode > 400 {
@@ -47,16 +54,19 @@ func (c *Client) GetAddresses(startAddress string) ([]Chapter, error) {
 		}
 		data, err := io.ReadAll(res.Body)
 		if err != nil {
-			return []Chapter{}, errors.New("Bad data")
+			return "", err
 		}
-		newChapter, err := getChapterData(string(data))
-		fmt.Printf("Title: %s\n", newChapter.title)
-		for _, line := range newChapter.contents {
-			fmt.Println(line)
+		chapterData, err := getChapterData(string(data))
+		if err != nil {
+			return "", err
 		}
-		found = append(found, newChapter)
+		chaptersData = append(chaptersData, chapterData)
 	}
-	return found, nil
+	pdfAddress, err = createPDF(chaptersData)
+	if err != nil {
+		return "", err
+	}
+	return "Pdf created at: " + pdfAddress, nil
 }
 
 func getSiteInfo(baseURL string) (urlInfo, error) {
@@ -98,4 +108,66 @@ func getChapterData(data string) (Chapter, error) {
 		contents: lines,
 	}, nil
 
+}
+
+func createPDF(chapterData []Chapter) (string, error) {
+	// Create pdf
+	pdf := gopdf.GoPdf{}
+	pdf.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
+
+	// Set fonts
+	err := pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Regular.ttf", gopdf.TtfOption{Style: gopdf.Regular})
+	if err != nil {
+		return "", err
+	}
+	err = pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Bold.ttf", gopdf.TtfOption{Style: gopdf.Bold})
+	if err != nil {
+		return "", err
+	}
+	for _, chapter := range chapterData {
+
+		pdf.AddPage()
+
+		err = pdf.SetFont("NotoSansJP", "B", 16)
+		if err != nil {
+			return "", err
+		}
+
+		// Set title
+		pdf.SetX((pdf.GetX() / 2) + 100)
+		pdf.CellWithOption(&gopdf.Rect{W: 400, H: 20}, chapter.title,
+			gopdf.CellOption{Align: gopdf.Justify | gopdf.Center})
+		pdf.Br(40)
+
+		// Set body
+		err = pdf.SetFont("NotoSansJP", "", 14)
+		if err != nil {
+			return "", err
+		}
+		pdf.SetX(50)
+		for _, line := range chapter.contents {
+			if line == "" {
+				continue
+			}
+
+			if pdf.GetY() > MAXPAGEHEIGHT {
+				pdf.AddPage()
+				pdf.SetX(50)
+				_ = pdf.SetFont("NotoSansJP", "", 14)
+			}
+
+			bodyRect := &gopdf.Rect{W: 500, H: LINEHEIGHT}
+			err = pdf.MultiCell(bodyRect, line)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+
+	pdfPath := "tmpPDF/hello2U.pdf"
+	err = pdf.WritePdf(pdfPath)
+	if err != nil {
+		return "", err
+	}
+	return pdfPath, nil
 }
