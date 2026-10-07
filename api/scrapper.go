@@ -27,6 +27,12 @@ type Chapter struct {
 	contents []string
 }
 
+type Credits struct {
+	Author string
+	Title  string
+	URL    string
+}
+
 func (c *Client) GetAddresses(startAddress string) (string, error) {
 	if startAddress == "" {
 		return "", nil
@@ -37,7 +43,7 @@ func (c *Client) GetAddresses(startAddress string) (string, error) {
 	}
 	var pdfAddress string
 	var chaptersData []Chapter
-	for i := urlData.startIndex; i < urlData.startIndex+2; i++ {
+	for i := urlData.startIndex; i < urlData.startIndex+5; i++ {
 		fullURL := fmt.Sprintf("%s/%d/", urlData.url, i)
 		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
@@ -62,7 +68,11 @@ func (c *Client) GetAddresses(startAddress string) (string, error) {
 		}
 		chaptersData = append(chaptersData, chapterData)
 	}
-	pdfAddress, err = createPDF(chaptersData)
+	bookCredits, err := c.getChapterAuthor(urlData.url)
+	if err != nil {
+		return "", err
+	}
+	pdfAddress, err = createPDF(chaptersData, bookCredits)
 	if err != nil {
 		return "", err
 	}
@@ -91,6 +101,35 @@ func getSiteInfo(baseURL string) (urlInfo, error) {
 	}, nil
 }
 
+func (c *Client) getChapterAuthor(url string) (Credits, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return Credits{}, err
+	}
+	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return Credits{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode > 400 {
+		return Credits{}, err
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return Credits{}, err
+	}
+	titleFind := regexp.MustCompile(`<meta property="og:title" content="\s*(.*?)\s*">`)
+	title := titleFind.FindAllStringSubmatch(string(data), 1)
+	authorFind := regexp.MustCompile(`<meta name="twitter:creator" content="\s*(.*?)\s*">`)
+	author := authorFind.FindAllStringSubmatch(string(data), 1)
+	return Credits{
+		Title:  title[0][1],
+		Author: author[0][1],
+		URL:    url,
+	}, nil
+}
+
 func getChapterData(data string) (Chapter, error) {
 	var lines []string
 	titleFind := regexp.MustCompile(`<h1 class="p-novel__title p-novel__title--rensai">\s*(.*?)\s*</h1>`)
@@ -110,7 +149,7 @@ func getChapterData(data string) (Chapter, error) {
 
 }
 
-func createPDF(chapterData []Chapter) (string, error) {
+func createPDF(chapterData []Chapter, credits Credits) (string, error) {
 	// Create pdf
 	pdf := gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
@@ -163,8 +202,27 @@ func createPDF(chapterData []Chapter) (string, error) {
 			}
 		}
 	}
+	pdf.AddPage()
+	err = pdf.SetFont("NotoSansJP", "B", 16)
+	if err != nil {
+		return "", err
+	}
 
-	pdfPath := "tmpPDF/hello2U.pdf"
+	chapterTitle := fmt.Sprintf("書名： %s", credits.Title)
+	bodyRect := &gopdf.Rect{W: 500, H: LINEHEIGHT}
+
+	pdf.Cell(bodyRect, chapterTitle)
+	pdf.Br(40)
+
+	authorCredit := fmt.Sprintf("作者： %s", credits.Author)
+	pdf.Cell(bodyRect, authorCredit)
+	pdf.Br(40)
+
+	chapterUrl := fmt.Sprintf("URL： %s", credits.URL)
+	pdf.Cell(bodyRect, chapterUrl)
+	pdf.Br(40)
+
+	pdfPath := "tmpPDF/hello3rd.pdf"
 	err = pdf.WritePdf(pdfPath)
 	if err != nil {
 		return "", err
