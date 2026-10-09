@@ -5,6 +5,7 @@ go 1.27.0
 require github.com/spf13/cobra v1.10.2
 
 require (
+	github.com/gocarina/gocsv v0.0.0-20260926200228-b2c6eb8fefab // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/phpdave11/gofpdi v1.0.16 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

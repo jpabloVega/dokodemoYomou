@@ -1,13 +1,16 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
+	vocabtrie "github.com/jpabloVega/dokodemoYomou/dictionary/vocab_trie"
 	"github.com/signintech/gopdf"
 )
 
@@ -33,9 +36,9 @@ type Credits struct {
 	URL    string
 }
 
-func (c *Client) GetAddresses(startAddress string) (string, error) {
+func (c *Client) WebToPDF(startAddress string) (string, error) {
 	if startAddress == "" {
-		return "", nil
+		return "", errors.New("No url\n")
 	}
 	urlData, err := getSiteInfo(startAddress)
 	if err != nil {
@@ -77,6 +80,125 @@ func (c *Client) GetAddresses(startAddress string) (string, error) {
 		return "", err
 	}
 	return "Pdf created at: " + pdfAddress, nil
+}
+
+func ScanTest() error {
+	t := vocabtrie.NewTrie()
+	err := t.LoadFromFile("dictionary/vocab_trie/vocabulary.json")
+	if err != nil {
+		return err
+	}
+	nCount := make(map[string]int)
+	contentsLine := "ある日、オリヴィアは夢を見た。婚約者のデイルが、義妹のグレースを好きだと言い、グレースも、デイルが好きだったと打ち明けられる夢"
+	splitLine := []rune(contentsLine)
+	var foundWords []string
+	start := 0
+	end := len(splitLine)
+	for true {
+		currWord := string(splitLine[start:end])
+		lvl, found := t.Search(currWord)
+		if found {
+			nCount[lvl] += 1
+			start += utf8.RuneCountInString(currWord)
+			end = len(splitLine)
+			foundWords = append(foundWords, currWord)
+			continue
+		}
+		end -= 1
+		if end == start {
+			start += 1
+			end = len(splitLine)
+		}
+		if start >= len(splitLine)-1 {
+			break
+		}
+	}
+	fmt.Println("Words found: ")
+	for _, word := range foundWords {
+		fmt.Printf("- %v\n", word)
+	}
+	fmt.Println("Words from every level")
+	for level, amount := range nCount {
+		fmt.Printf("%s: %d\n", level, amount)
+	}
+	return nil
+}
+
+func (c *Client) ScanBook(address string) error {
+	urlData, err := getSiteInfo(address)
+	if err != nil {
+		return err
+	}
+	chapterData, err := c.getSingleAddress(urlData)
+	if err != nil {
+		return err
+	}
+	t := vocabtrie.NewTrie()
+	err = t.LoadFromFile("dictionary/vocab_trie/vocabulary.json")
+	if err != nil {
+		return err
+	}
+	nCount := make(map[string]int)
+	var foundWords []string
+	for _, line := range chapterData.contents {
+		splitLine := []rune(line)
+		start := 0
+		end := len(splitLine)
+		for true {
+			currWord := string(splitLine[start:end])
+			lvl, found := t.Search(currWord)
+			if found {
+				nCount[lvl] += 1
+				start += utf8.RuneCountInString(currWord)
+				end = len(splitLine)
+				foundWords = append(foundWords, currWord)
+				continue
+			}
+			end -= 1
+			if end == start {
+				start += 1
+				end = len(splitLine)
+			}
+			if start >= len(splitLine)-1 {
+				break
+			}
+		}
+	}
+	fmt.Println("Words found: ")
+	for _, word := range foundWords {
+		fmt.Printf("- %v\n", word)
+	}
+	fmt.Println("Words from every level")
+	for level, amount := range nCount {
+		fmt.Printf("%s: %d\n", level, amount)
+	}
+	return nil
+}
+
+func (c *Client) getSingleAddress(address urlInfo) (Chapter, error) {
+	fullURL := fmt.Sprintf("%s/%d/", address.url, address.startIndex)
+	req, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return Chapter{}, err
+	}
+	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return Chapter{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode > 400 {
+		return Chapter{}, fmt.Errorf("Error: %v\n", res.Status)
+	}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return Chapter{}, err
+	}
+	chapterData, err := getChapterData(string(data))
+	if err != nil {
+		return Chapter{}, err
+	}
+	return chapterData, err
 }
 
 func getSiteInfo(baseURL string) (urlInfo, error) {
