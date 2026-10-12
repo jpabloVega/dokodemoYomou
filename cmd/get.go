@@ -28,7 +28,7 @@ func init() {
 	getCmd.Flags().IntVarP(&bodySize, "bodysize", "b", 14, "Size for the font of the body")
 	getCmd.Flags().IntVarP(&titleSize, "titlesize", "t", 16, "Size for the font of the titles")
 	getCmd.Flags().IntVarP(&chapterAmount, "volumesize", "v", 3, "Amount of chapter to download")
-	getCmd.Flags().StringVarP(&destinationPath, "destination", "d", "pfd", "Path to the folder where pdf's are stored")
+	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
 
 }
@@ -71,7 +71,7 @@ func GetContents(cmd *cobra.Command, args []string) {
 			}
 			defer res.Body.Close()
 			if res.StatusCode != 200 {
-				fmt.Printf("Error reaching link: %v\n", res.Status)
+				fmt.Printf("Error reaching %v: %v\n", fullURL, res.Status)
 				return
 			}
 			data, err := io.ReadAll(res.Body)
@@ -174,12 +174,13 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 	pdf.Cell(bodyRect, chapterUrl)
 	pdf.Br(40)
 
+	fullPath := fmt.Sprintf("%s/%s.pdf", destinationPath, fileName)
 	if fileName == "" {
 		fileName = credits.Title
 	}
-	err = pdf.WritePdf(destinationPath + "/" + fileName + ".pdf")
+	err = pdf.WritePdf(fullPath)
 	if err != nil {
 		return "", err
 	}
-	return destinationPath, nil
+	return fullPath, nil
 }

@@ -5,8 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/gocarina/gocsv"
+)
+
+const (
+	CURR = "n1"
 )
 
 type Word struct {
@@ -16,14 +21,20 @@ type Word struct {
 	Definition     string `csv:"waller_definition"`
 }
 
-func CSVtoJson() ([]Word, error) {
-	file, err := os.Open("dictionary/vocab_N5-N1/n1.csv")
+type Verb struct {
+	Kanji   string `csv:"kanji"`
+	Kana    string `csv:"kana"`
+	Meaning string `csv:"meaning"`
+}
+
+func CSVtoJson() ([]Verb, error) {
+	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n5.csv")
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	var words []Word
+	var words []Verb
 
 	err = gocsv.UnmarshalFile(file, &words)
 	if err != nil {
@@ -36,6 +47,28 @@ func CSVtoJson() ([]Word, error) {
 	return words, nil
 }
 
+func TestVerbConjucation(verbs []Verb) error {
+	for _, verb := range verbs {
+
+	}
+}
+
+func conjugator(verb string) ([]string, error) {
+	irregulars := []string{"要る", "入る", "走る", "帰る", "切る", "知る", "知る", "喋る", "蹴る", "減る", "焦る", "握る", "散る", "弄る", "滑る"}
+	if verb == "来る" || verb == "くる" {
+		return []string{"来ます", "来ない", "来ません", "来た", "来ました", "来なかった", "来て", "来よう", "来ましょう", "来れば", "来い"}, nil
+	}
+	fullWord := []rune(verb)
+	lastChar := len(fullWord) - 1
+	start := fullWord[0:lastChar]
+	last := fullWord[lastChar]
+	present_end := []string{"ます", "ない", "ませんあ"}
+	ru_conj := []string{""}
+	if slices.Contains(irregulars, verb) {
+
+	}
+}
+
 func CreateTrie() error {
 	words, err := CSVtoJson()
 	if err != nil {
@@ -43,14 +76,18 @@ func CreateTrie() error {
 	}
 
 	t := NewTrie()
-	err = t.LoadFromFile("dictionary/createjsontest/n5.json")
+
+	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
 	if err != nil {
 		return err
 	}
 
 	for _, word := range words {
-		t.Insert(word.Kana)
-		t.Insert(word.Kanji)
+		if word.Kanji == "" {
+			t.Insert(word.Kana)
+		} else {
+			t.Insert(word.Kanji)
+		}
 	}
 
 	err = t.SaveToFile()
@@ -64,9 +101,10 @@ func CreateTrie() error {
 // trie logic
 
 type TrieNode struct {
-	Children map[string]*TrieNode `json:"children"`
-	IsEnd    bool                 `json:"is_end"`
-	Level    string               `level:"level"`
+	Children   map[string]*TrieNode `json:"children"`
+	IsEnd      bool                 `json:"is_end"`
+	Level      string               `json:"level"`
+	Definition string               `json:"definition"`
 }
 
 type Trie struct {
@@ -88,7 +126,7 @@ func (t *Trie) Insert(word string) {
 		}
 		current = current.Children[charStr]
 	}
-	current.Level = "n1"
+	current.Level = CURR
 	current.IsEnd = true
 }
 
@@ -110,7 +148,7 @@ func (t *Trie) SaveToFile() error {
 	if err != nil {
 		return fmt.Errorf("Failed to serialize json: %v", err)
 	}
-	return os.WriteFile("dictionary/createjsontest/n5.json", data, 0644)
+	return os.WriteFile("dictionary/vocab_trie/dictionary.json", data, 0644)
 }
 
 func (t *Trie) LoadFromFile(filename string) error {
