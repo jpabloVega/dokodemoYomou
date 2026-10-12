@@ -10,63 +10,136 @@ import (
 	"github.com/gocarina/gocsv"
 )
 
-const (
-	CURR = "n1"
-)
-
 type Word struct {
-	SequenceNumber int    `csv:"jmdict_seq"`
-	Kana           string `csv:"kana"`
-	Kanji          string `csv:"kanji"`
-	Definition     string `csv:"waller_definition"`
+	Level      string `csv:"level"`
+	Kana       string `csv:"kana"`
+	Kanji      string `csv:"kanji"`
+	Definition string `csv:"definition"`
+	Type       string `csv:"type"`
 }
 
-type Verb struct {
-	Kanji   string `csv:"kanji"`
-	Kana    string `csv:"kana"`
-	Meaning string `csv:"meaning"`
-}
-
-func CSVtoJson() ([]Verb, error) {
-	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n5.csv")
+func CSVtoJson() ([]Word, error) {
+	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n4.csv")
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	var words []Verb
+	var words []Word
 
 	err = gocsv.UnmarshalFile(file, &words)
 	if err != nil {
 		panic(err)
 	}
 
-	if len(words) < 10 {
+	if len(words) < 1 {
 		panic(errors.New("words is empty"))
 	}
 	return words, nil
 }
 
-func TestVerbConjucation(verbs []Verb) error {
-	for _, verb := range verbs {
+func TestVerbConjucation() error {
+	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n4.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
 
+	var words []Word
+
+	err = gocsv.UnmarshalFile(file, &words)
+	if err != nil {
+		panic(err)
+	}
+
+	if len(words) < 1 {
+		panic(errors.New("words is empty"))
+	}
+	for _, verb := range words {
+		if verb.Type == "verb" {
+			conjVerb := conjugator(verb.Kanji)
+			fmt.Println(conjVerb)
+			continue
+		}
+		cleanAdj := AdjConjugator(verb)
+		fmt.Println(cleanAdj)
+	}
+	return nil
+}
+
+func conjugator(verb string) string {
+	if verb == "" {
+		return ""
+	}
+	fullWord := []rune(verb)
+	if len(fullWord) < 2 {
+		return verb
+	}
+	terminations := []string{"う", "く", "ぐ", "す", "つ", "ぬ", "ぶ", "む", "る"}
+	lastCharPos := len(fullWord) - 1
+	start := fullWord[0:lastCharPos]
+	last := fullWord[lastCharPos]
+	if slices.Contains(terminations, string(last)) {
+		return string(start)
+	}
+	return verb
+}
+
+func TestAdjConjugator() {
+	testWord := Word{
+		Level:      "n1",
+		Kana:       "かがやかしい",
+		Kanji:      "輝かしい",
+		Definition: "brilliant, glorious, glittering, bright, splendid (e.g. achievement, success), promising (e.g. future)",
+		Type:       "I Adjective",
+	}
+	results := AdjConjugator(testWord)
+	for _, result := range results {
+		fmt.Println(result.Level)
+		fmt.Println(result.Kanji)
+		fmt.Println(result.Kana)
+		fmt.Println(result.Definition)
+		fmt.Println()
 	}
 }
 
-func conjugator(verb string) ([]string, error) {
-	irregulars := []string{"要る", "入る", "走る", "帰る", "切る", "知る", "知る", "喋る", "蹴る", "減る", "焦る", "握る", "散る", "弄る", "滑る"}
-	if verb == "来る" || verb == "くる" {
-		return []string{"来ます", "来ない", "来ません", "来た", "来ました", "来なかった", "来て", "来よう", "来ましょう", "来れば", "来い"}, nil
+func AdjConjugator(adj Word) []Word {
+	var allAdjConj []Word
+	if adj.Kanji == "" {
+		return []Word{}
 	}
-	fullWord := []rune(verb)
-	lastChar := len(fullWord) - 1
-	start := fullWord[0:lastChar]
-	last := fullWord[lastChar]
-	present_end := []string{"ます", "ない", "ませんあ"}
-	ru_conj := []string{""}
-	if slices.Contains(irregulars, verb) {
 
+	adjEndings := []string{"くない", "かった", "くなかった", "くて", "く", "ければ"}
+	adjEndDesc := []string{"\nPresent Negative",
+		"\nPast Affirmative",
+		"\nPast Negative",
+		"\nTe-Form",
+		"\nKu-Form",
+		"\nConditional"}
+
+	kanji := []rune(adj.Kanji)
+	lastKanjiPos := len(kanji) - 1
+	startKanji := kanji[0:lastKanjiPos]
+
+	if string(kanji[len(kanji)-1]) != "い" {
+		return allAdjConj
 	}
+
+	kana := []rune(adj.Kana)
+	lastKanaPos := len(kana) - 1
+	startKana := kana[0:lastKanaPos]
+
+	allAdjConj = append(allAdjConj, adj)
+
+	for i, end := range adjEndings {
+		allAdjConj = append(allAdjConj, Word{
+			Level:      adj.Level,
+			Kana:       string(startKana) + end,
+			Kanji:      string(startKanji) + end,
+			Definition: adj.Definition + adjEndDesc[i],
+		})
+	}
+	return allAdjConj
 }
 
 func CreateTrie() error {
@@ -83,10 +156,10 @@ func CreateTrie() error {
 	}
 
 	for _, word := range words {
-		if word.Kanji == "" {
-			t.Insert(word.Kana)
+		if word.Type == "verb" {
+			t.Insert(word)
 		} else {
-			t.Insert(word.Kanji)
+			t.Insert(word)
 		}
 	}
 
@@ -103,6 +176,7 @@ func CreateTrie() error {
 type TrieNode struct {
 	Children   map[string]*TrieNode `json:"children"`
 	IsEnd      bool                 `json:"is_end"`
+	Reading    string               `json:"reading"`
 	Level      string               `json:"level"`
 	Definition string               `json:"definition"`
 }
@@ -117,16 +191,18 @@ func NewTrie() *Trie {
 	}
 }
 
-func (t *Trie) Insert(word string) {
+func (t *Trie) Insert(word Word) {
 	current := t.Root
-	for _, ch := range word {
+	for _, ch := range word.Kanji {
 		charStr := string(ch)
 		if _, exists := current.Children[charStr]; !exists {
 			current.Children[charStr] = &TrieNode{Children: make(map[string]*TrieNode)}
 		}
 		current = current.Children[charStr]
 	}
-	current.Level = CURR
+	current.Level = word.Level
+	current.Reading = word.Kana
+	current.Definition = word.Definition
 	current.IsEnd = true
 }
 

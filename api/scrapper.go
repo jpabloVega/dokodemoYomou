@@ -83,7 +83,7 @@ func (c *Client) ScanBook(address string) error {
 		return err
 	}
 	t := vocabtrie.NewTrie()
-	err = t.LoadFromFile("dictionary/vocab_trie/vocabulary.json")
+	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
 	if err != nil {
 		return err
 	}
