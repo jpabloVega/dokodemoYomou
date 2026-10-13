@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/gocarina/gocsv"
 )
@@ -16,6 +15,14 @@ type Word struct {
 	Kanji      string `csv:"kanji"`
 	Definition string `csv:"definition"`
 	Type       string `csv:"type"`
+}
+
+type StartEnd struct {
+	Word       Word
+	KanjiStart string
+	KanjiEnd   string
+	KanaStart  string
+	KanaEnd    string
 }
 
 func CSVtoJson() ([]Word, error) {
@@ -67,22 +74,162 @@ func TestVerbConjucation() error {
 	return nil
 }
 
-func conjugator(verb string) string {
-	if verb == "" {
-		return ""
+func conjugator(word Word) []Word {
+	if word.Kanji == "" {
+		return []Word{}
 	}
-	fullWord := []rune(verb)
-	if len(fullWord) < 2 {
-		return verb
+
+	fullKanji := []rune(word.Kanji)
+	lastCharPos := len(fullKanji) - 1
+	kanjiStart := fullKanji[0:lastCharPos]
+	kanjiEnd := fullKanji[lastCharPos]
+
+	fullKana := []rune(word.Kana)
+	lastCharPos = len(fullKana) - 1
+	kanaStart := fullKana[0:lastCharPos]
+	kanaEnd := fullKana[lastCharPos]
+
+	allVerbConj := []Word{}
+	resultConj := []Word{}
+	allVerbConj = append(allVerbConj, word)
+
+	conjugateData := StartEnd{
+		Word:       word,
+		KanjiStart: string(kanjiStart),
+		KanjiEnd:   string(kanjiEnd),
+		KanaStart:  string(kanaStart),
+		KanaEnd:    string(kanaEnd),
 	}
-	terminations := []string{"う", "く", "ぐ", "す", "つ", "ぬ", "ぶ", "む", "る"}
-	lastCharPos := len(fullWord) - 1
-	start := fullWord[0:lastCharPos]
-	last := fullWord[lastCharPos]
-	if slices.Contains(terminations, string(last)) {
-		return string(start)
+
+	switch word.Type {
+	case "Verb Iku":
+		resultConj = ConjugateIku(conjugateData)
+	case "Verb Kuru":
+		resultConj = ConjugateKuru(conjugateData)
+	case "Verb Suru":
+		return allVerbConj
+	case "Verb":
+		return allVerbConj
+	case "Ichidan Verb":
+		return allVerbConj
+	case "I Adjective":
+		resultConj = IAdjConjugator(conjugateData)
+	case "Yoi Adjective":
+		return allVerbConj
+	default:
+		return allVerbConj
 	}
-	return verb
+	return append(allVerbConj, resultConj...)
+
+}
+
+func ConjugateIku(conjData StartEnd) []Word {
+	verb := conjData.Word
+	var allVerbConj []Word
+	verbEnds := []string{"きます", "かない", "きません", "こう", "きましょう",
+		"け", "ってください", "くな", "かないでください", "った", "きました", "かなかった",
+		"きませんでした", "って", "けば", "かなければ", "ったら", "かなかったら", "ける",
+		"けます", "けない", "けません", "か"}
+	verbEndDesc := []string{"\nPresent Polite",
+		"\nPlain Negative",
+		"\nPolite Negative",
+		"\nVolitional Plain",
+		"\nVolitional Polite",
+		"\nImperative Plain",
+		"\nImperative Polite",
+		"\nImperative Plain Negative",
+		"\nImperative Polite Negative",
+		"\nPast Plain",
+		"\nPast Polite",
+		"\nPast Plain Negative",
+		"\nPast Polite Negative",
+		"\nTe-Form",
+		"\nContional Plain",
+		"\nConditional Negative",
+		"\nConditional Tara Form",
+		"\nConditional Tara Form Negative",
+		"\nPotential Plain",
+		"\nPotential Polite",
+		"\nPotential Plain Negative",
+		"\nPotential Polite Negative",
+		"\nCausative Pasive"}
+
+	for i, end := range verbEnds {
+		allVerbConj = append(allVerbConj, Word{
+			Level:      verb.Level,
+			Kana:       conjData.KanaStart + end,
+			Kanji:      conjData.KanjiStart + end,
+			Definition: verb.Definition + verbEndDesc[i],
+		})
+	}
+	return allVerbConj
+}
+
+func ConjugateKuru(conjData StartEnd) []Word {
+	verb := conjData.Word
+	var allVerbConj []Word
+	verbEndsKanji := []string{"ます", "ない", "ません", "よう", "ましょう",
+		"い", "てください", "るな", "ないでください", "た", "ました", "なかった",
+		"ませんでした", "て", "れば", "なければ", "たら", "なかったら", "られる",
+		"られます", "られない", "られません", "ら"}
+	verbEndsKana := []string{"きます", "こない", "きません", "こよう", "きましょう",
+		"こい", "きてください", "くるな", "こないでください", "きた", "きました", "こなかった",
+		"きませんでした", "きて", "くれば", "こなければ", "きたら", "こなかったら", "こられる",
+		"こられます", "こられない", "こられません", "こら"}
+	verbEndDesc := []string{"\nPresent Polite",
+		"\nPlain Negative",
+		"\nPolite Negative",
+		"\nVolitional Plain",
+		"\nVolitional Polite",
+		"\nImperative Plain",
+		"\nImperative Polite",
+		"\nImperative Plain Negative",
+		"\nImperative Polite Negative",
+		"\nPast Plain",
+		"\nPast Polite",
+		"\nPast Plain Negative",
+		"\nPast Polite Negative",
+		"\nTe-Form",
+		"\nContional Plain",
+		"\nConditional Negative",
+		"\nConditional Tara Form",
+		"\nConditional Tara Form Negative",
+		"\nPotential Plain",
+		"\nPotential Polite",
+		"\nPotential Plain Negative",
+		"\nPotential Polite Negative",
+		"\nCausative Pasive"}
+
+	kanjiMinusOne := []rune(conjData.KanjiStart)
+	lastCharPos := len(kanjiMinusOne) - 1
+	kanjiStart := kanjiMinusOne[0:lastCharPos]
+	kanjiEnd := kanjiMinusOne[lastCharPos]
+
+	kanaMinusOne := []rune(conjData.KanaStart)
+	lastCharPos = len(kanaMinusOne) - 1
+	kanaStart := kanaMinusOne[0:lastCharPos]
+
+	if string(kanjiEnd) == "来" {
+		for i, end := range verbEndsKanji {
+			allVerbConj = append(allVerbConj, Word{
+				Level:      verb.Level,
+				Kana:       string(kanaStart) + verbEndsKana[i],
+				Kanji:      conjData.KanjiStart + end,
+				Definition: verb.Definition + verbEndDesc[i],
+			})
+		}
+		return allVerbConj
+	}
+
+	for i, end := range verbEndsKana {
+		allVerbConj = append(allVerbConj, Word{
+			Level:      verb.Level,
+			Kana:       string(kanaStart) + end,
+			Kanji:      string(kanjiStart) + end,
+			Definition: verb.Definition + verbEndDesc[i],
+		})
+	}
+	return allVerbConj
 }
 
 func TestAdjConjugator() {
@@ -103,7 +250,8 @@ func TestAdjConjugator() {
 	}
 }
 
-func AdjConjugator(adj Word) []Word {
+func IAdjConjugator(conjData StartEnd) []Word {
+	adj := conjData.Word
 	var allAdjConj []Word
 	if adj.Kanji == "" {
 		return []Word{}
@@ -117,25 +265,11 @@ func AdjConjugator(adj Word) []Word {
 		"\nKu-Form",
 		"\nConditional"}
 
-	kanji := []rune(adj.Kanji)
-	lastKanjiPos := len(kanji) - 1
-	startKanji := kanji[0:lastKanjiPos]
-
-	if string(kanji[len(kanji)-1]) != "い" {
-		return allAdjConj
-	}
-
-	kana := []rune(adj.Kana)
-	lastKanaPos := len(kana) - 1
-	startKana := kana[0:lastKanaPos]
-
-	allAdjConj = append(allAdjConj, adj)
-
 	for i, end := range adjEndings {
 		allAdjConj = append(allAdjConj, Word{
 			Level:      adj.Level,
-			Kana:       string(startKana) + end,
-			Kanji:      string(startKanji) + end,
+			Kana:       conjData.KanaStart + end,
+			Kanji:      conjData.KanjiStart + end,
 			Definition: adj.Definition + adjEndDesc[i],
 		})
 	}
