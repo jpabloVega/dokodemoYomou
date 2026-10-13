@@ -9,9 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode/utf8"
-
-	vocabtrie "github.com/jpabloVega/dokodemoYomou/dictionary/vocab_trie"
 )
 
 type UrlInfo struct {
@@ -31,59 +28,7 @@ type Credits struct {
 	URL    string
 }
 
-func (c *Client) ScanBook(address string) error {
-	urlData, err := GetSiteInfo(address)
-	if err != nil {
-		return err
-	}
-	chapterData, err := c.getSingleAddress(urlData)
-	if err != nil {
-		return err
-	}
-	t := vocabtrie.NewTrie()
-	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
-	if err != nil {
-		return err
-	}
-	nCount := make(map[string][]string)
-	for _, line := range chapterData.Contents {
-		splitLine := []rune(line)
-		start := 0
-		end := len(splitLine)
-		for true {
-			currWord := string(splitLine[start:end])
-			foundWord, found := t.Search(currWord)
-			if found {
-				nCount[foundWord.Level] = append(nCount[foundWord.Level], foundWord.Kanji)
-				start += utf8.RuneCountInString(currWord)
-				end = len(splitLine)
-				continue
-			}
-			end -= 1
-			if end == start {
-				start += 1
-				end = len(splitLine)
-			}
-			if start >= len(splitLine)-1 {
-				break
-			}
-		}
-	}
-
-	fmt.Println("Words from every level")
-	for key, value := range nCount {
-		fmt.Printf("%s : %d\n", key, len(value))
-		for i, word := range value {
-			fmt.Print(word + ", ")
-			if i%10 == 0 || i == len(value)-1 {
-				fmt.Println()
-			}
-		}
-	}
-	return nil
-}
-
-func (c *Client) getSingleAddress(address UrlInfo) (Chapter, error) {
+func (c *Client) GetSingleAddress(address UrlInfo) (Chapter, error) {
 	fullURL := fmt.Sprintf("%s/%d/", address.Url, address.StartIndex)
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
