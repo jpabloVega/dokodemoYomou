@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/gocarina/gocsv"
 )
@@ -25,8 +26,8 @@ type StartEnd struct {
 	KanaEnd    string
 }
 
-func CSVtoJson() ([]Word, error) {
-	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n4.csv")
+func CSVtoJson(directory string) ([]Word, error) {
+	file, err := os.Open(directory)
 	if err != nil {
 		panic(err)
 	}
@@ -45,38 +46,86 @@ func CSVtoJson() ([]Word, error) {
 	return words, nil
 }
 
-func TestVerbConjucation() error {
-	file, err := os.Open("dictionary/vocab_N5-N1/verbs_n4.csv")
-	if err != nil {
-		panic(err)
+func TestConjucator() {
+	ikuTest := Word{
+		Level:      "n5",
+		Kanji:      "行く",
+		Kana:       "行[い]く",
+		Definition: "to go, to move (towards), to head (towards), to leave (for)",
+		Type:       "Verb Iku",
 	}
-	defer file.Close()
-
+	kuruTest := Word{
+		Level:      "n5",
+		Kanji:      "来る",
+		Kana:       "来[く]る",
+		Definition: "to come (spatially or temporally), to approach, to arrive",
+		Type:       "Verb Kuru",
+	}
+	iAdjTest := Word{
+		Level:      "extra",
+		Kanji:      "暇がない",
+		Kana:       "暇[ひま]がない",
+		Definition: "busy, having no (free) time",
+		Type:       "I Adjective",
+	}
+	ichidanTest := Word{
+		Level:      "extra",
+		Kanji:      "報いる",
+		Kana:       "報[むく]いる",
+		Definition: "to reward, to recompense, to repay",
+		Type:       "Ichidan Verb",
+	}
+	godanTest := Word{
+		Level:      "extra",
+		Kanji:      "雨が降る",
+		Kana:       "雨[あめ]が 降[ふ]る",
+		Definition: "to rain",
+		Type:       "Verb",
+	}
+	yoiTest := Word{
+		Level:      "extra",
+		Kanji:      "心地良い",
+		Kana:       "心地良[ここちよ]い",
+		Definition: "comfortable, pleasant",
+		Type:       "Yoi Adjective",
+	}
+	suruTest := Word{
+		Level:      "extra",
+		Kanji:      "擁する",
+		Kana:       "擁[よう]する",
+		Definition: "to embrace, to hug",
+		Type:       "Verb Suru",
+	}
+	normalTest := Word{
+		Level:      "n4",
+		Kanji:      "工場",
+		Kana:       "工場[こうじょう]",
+		Definition: "factory, plant, mill, workshop",
+		Type:       "Noun",
+	}
 	var words []Word
+	words = append(words, ikuTest, kuruTest, iAdjTest, ichidanTest, godanTest, yoiTest, suruTest, normalTest)
 
-	err = gocsv.UnmarshalFile(file, &words)
-	if err != nil {
-		panic(err)
-	}
-
-	if len(words) < 1 {
-		panic(errors.New("words is empty"))
-	}
-	for _, verb := range words {
-		if verb.Type == "verb" {
-			conjVerb := conjugator(verb.Kanji)
-			fmt.Println(conjVerb)
-			continue
+	for _, word := range words {
+		conjugations := conjugator(word)
+		for _, conj := range conjugations {
+			fmt.Println(conj.Level)
+			fmt.Println(conj.Kanji)
+			fmt.Println(conj.Kana)
+			fmt.Println(conj.Definition)
 		}
-		cleanAdj := AdjConjugator(verb)
-		fmt.Println(cleanAdj)
 	}
-	return nil
 }
 
 func conjugator(word Word) []Word {
 	if word.Kanji == "" {
 		return []Word{}
+	}
+
+	conjugatedTypes := []string{"Verb Iku", "Verb Kuru", "Verb Suru", "Verb", "Ichidan Verb", "I Adjective", "Yoi Adjective"}
+
+	if !slices.Contains(conjugatedTypes, word.Type) {
+		return []Word{word}
 	}
 
 	fullKanji := []rune(word.Kanji)
@@ -107,15 +156,15 @@ func conjugator(word Word) []Word {
 	case "Verb Kuru":
 		resultConj = ConjugateKuru(conjugateData)
 	case "Verb Suru":
-		return allVerbConj
+		resultConj = ConjugateSuru(conjugateData)
 	case "Verb":
-		return allVerbConj
+		resultConj = ConjugateGodan(conjugateData)
 	case "Ichidan Verb":
-		return allVerbConj
+		resultConj = ConjugateIchidan(conjugateData)
 	case "I Adjective":
 		resultConj = IAdjConjugator(conjugateData)
 	case "Yoi Adjective":
-		return allVerbConj
+		resultConj = YoiConjugator(conjugateData)
 	default:
 		return allVerbConj
 	}
@@ -232,30 +281,193 @@ func ConjugateKuru(conjData StartEnd) []Word {
 	return allVerbConj
 }
 
-func TestAdjConjugator() {
-	testWord := Word{
-		Level:      "n1",
-		Kana:       "かがやかしい",
-		Kanji:      "輝かしい",
-		Definition: "brilliant, glorious, glittering, bright, splendid (e.g. achievement, success), promising (e.g. future)",
-		Type:       "I Adjective",
+func ConjugateSuru(conjData StartEnd) []Word {
+	verb := conjData.Word
+	var allVerbConj []Word
+	verbEnds := []string{"します", "しない", "しません", "しよう", "しましょう",
+		"しろ", "してくだい", "するな", "しないでください", "した", "しました", "しなかった",
+		"しませんでした", "して", "すれば", "しなければ", "したら", "しなかったら", "できる",
+		"できます", "できない", "できません", "され"}
+	verbEndDesc := []string{"\nPresent Polite",
+		"\nPlain Negative",
+		"\nPolite Negative",
+		"\nVolitional Plain",
+		"\nVolitional Polite",
+		"\nImperative Plain",
+		"\nImperative Polite",
+		"\nImperative Plain Negative",
+		"\nImperative Polite Negative",
+		"\nPast Plain",
+		"\nPast Polite",
+		"\nPast Plain Negative",
+		"\nPast Polite Negative",
+		"\nTe-Form",
+		"\nContional Plain",
+		"\nConditional Negative",
+		"\nConditional Tara Form",
+		"\nConditional Tara Form Negative",
+		"\nPotential Plain",
+		"\nPotential Polite",
+		"\nPotential Plain Negative",
+		"\nPotential Polite Negative",
+		"\nCausative Pasive"}
+
+	if len([]rune(conjData.Word.Kanji)) <= 2 {
+		for i, end := range verbEnds {
+			allVerbConj = append(allVerbConj, Word{
+				Level:      verb.Level,
+				Kana:       end,
+				Kanji:      end,
+				Definition: verb.Definition + verbEndDesc[i],
+			})
+		}
+		return allVerbConj
 	}
-	results := AdjConjugator(testWord)
-	for _, result := range results {
-		fmt.Println(result.Level)
-		fmt.Println(result.Kanji)
-		fmt.Println(result.Kana)
-		fmt.Println(result.Definition)
-		fmt.Println()
+
+	kanjiMinusTwo := []rune(conjData.KanjiStart)
+	lastCharPos := len(kanjiMinusTwo) - 1
+	kanjiStart := kanjiMinusTwo[0:lastCharPos]
+
+	kanaMinusTwo := []rune(conjData.KanaStart)
+	lastCharPos = len(kanaMinusTwo) - 1
+	kanaStart := kanaMinusTwo[0:lastCharPos]
+
+	for i, end := range verbEnds {
+		allVerbConj = append(allVerbConj, Word{
+			Level:      verb.Level,
+			Kana:       string(kanaStart) + end,
+			Kanji:      string(kanjiStart) + end,
+			Definition: verb.Definition + verbEndDesc[i],
+		})
 	}
+	return allVerbConj
+}
+
+func ConjugateGodan(conjData StartEnd) []Word {
+	verb := conjData.Word
+	v := getEnds(conjData.KanjiEnd)
+	var allVerbConj []Word
+	verbEnds := []string{v.i + "ます", v.a + "ない", v.i + "ません", v.o, v.i + "ましょう",
+		v.e, v.te + "ください", conjData.KanjiEnd + "な", v.a + "ないでください",
+		v.ta, v.i + "ました", v.a + "なかった", v.i + "ませんでした", v.te, v.e + "ば",
+		v.a + "なければ", v.ta + "ら", v.a + "なかったら", v.e + "る",
+		v.e + "ます", v.e + "ない", v.e + "ません", v.a}
+	verbEndDesc := []string{"\nPresent Polite",
+		"\nPlain Negative",
+		"\nPolite Negative",
+		"\nVolitional Plain",
+		"\nVolitional Polite",
+		"\nImperative Plain",
+		"\nImperative Polite",
+		"\nImperative Plain Negative",
+		"\nImperative Polite Negative",
+		"\nPast Plain",
+		"\nPast Polite",
+		"\nPast Plain Negative",
+		"\nPast Polite Negative",
+		"\nTe-Form",
+		"\nContional Plain",
+		"\nConditional Negative",
+		"\nConditional Tara Form",
+		"\nConditional Tara Form Negative",
+		"\nPotential Plain",
+		"\nPotential Polite",
+		"\nPotential Plain Negative",
+		"\nPotential Polite Negative",
+		"\nCausative Pasive"}
+
+	for i, end := range verbEnds {
+		allVerbConj = append(allVerbConj, Word{
+			Level:      verb.Level,
+			Kana:       conjData.KanaStart + end,
+			Kanji:      conjData.KanjiStart + end,
+			Definition: verb.Definition + verbEndDesc[i],
+		})
+	}
+	return allVerbConj
+}
+
+func ConjugateIchidan(conjData StartEnd) []Word {
+	verb := conjData.Word
+	var allVerbConj []Word
+	verbEnds := []string{"ます", "ない", "ません", "よう", "ましょう",
+		"よ", "てください", "るな", "ないでください",
+		"た", "ました", "なかった", "ませんでした", "て", "れば",
+		"なければ", "たら", "なかったら", "られる",
+		"られます", "られない", "られません", "ら"}
+	verbEndDesc := []string{"\nPresent Polite",
+		"\nPlain Negative",
+		"\nPolite Negative",
+		"\nVolitional Plain",
+		"\nVolitional Polite",
+		"\nImperative Plain",
+		"\nImperative Polite",
+		"\nImperative Plain Negative",
+		"\nImperative Polite Negative",
+		"\nPast Plain",
+		"\nPast Polite",
+		"\nPast Plain Negative",
+		"\nPast Polite Negative",
+		"\nTe-Form",
+		"\nContional Plain",
+		"\nConditional Negative",
+		"\nConditional Tara Form",
+		"\nConditional Tara Form Negative",
+		"\nPotential Plain",
+		"\nPotential Polite",
+		"\nPotential Plain Negative",
+		"\nPotential Polite Negative",
+		"\nCausative Pasive"}
+
+	for i, end := range verbEnds {
+		allVerbConj = append(allVerbConj, Word{
+			Level:      verb.Level,
+			Kana:       conjData.KanaStart + end,
+			Kanji:      conjData.KanjiStart + end,
+			Definition: verb.Definition + verbEndDesc[i],
+		})
+	}
+	return allVerbConj
+}
+
+type Godan struct {
+	a  string
+	e  string
+	o  string
+	i  string
+	te string
+	ta string
+}
+
+func getEnds(char string) Godan {
+	switch char {
+	case "う":
+		return Godan{a: "わ", e: "え", o: "おう", i: "い", te: "って", ta: "った"}
+	case "く":
+		return Godan{a: "か", e: "け", o: "こう", i: "き", te: "いて", ta: "いた"}
+	case "す":
+		return Godan{a: "さ", e: "せ", o: "そう", i: "し", te: "して", ta: "した"}
+	case "つ":
+		return Godan{a: "た", e: "て", o: "とう", i: "ち", te: "って", ta: "った"}
+	case "ぬ":
+		return Godan{a: "な", e: "ね", o: "のう", i: "に", te: "んで", ta: "んだ"}
+	case "ぶ":
+		return Godan{a: "ば", e: "べ", o: "ぼう", i: "び", te: "んで", ta: "んだ"}
+	case "む":
+		return Godan{a: "ま", e: "め", o: "もう", i: "み", te: "んで", ta: "んだ"}
+	case "る":
+		return Godan{a: "ら", e: "れ", o: "ろう", i: "り", te: "って", ta: "った"}
+	case "ぐ":
+		return Godan{a: "が", e: "げ", o: "ごう", i: "ぎ", te: "いで", ta: "いた"}
+	default:
+		return Godan{}
+	}
+
 }
 
 func IAdjConjugator(conjData StartEnd) []Word {
 	adj := conjData.Word
 	var allAdjConj []Word
-	if adj.Kanji == "" {
-		return []Word{}
-	}
 
 	adjEndings := []string{"くない", "かった", "くなかった", "くて", "く", "ければ"}
 	adjEndDesc := []string{"\nPresent Negative",
@@ -276,28 +488,58 @@ func IAdjConjugator(conjData StartEnd) []Word {
 	return allAdjConj
 }
 
+func YoiConjugator(conjData StartEnd) []Word {
+	adj := conjData.Word
+	var allAdjConj []Word
+
+	adjEndings := []string{"よくない", "よかった", "よくなかった", "よくて", "よく", "よければ"}
+	adjEndDesc := []string{"\nPresent Negative",
+		"\nPast Affirmative",
+		"\nPast Negative",
+		"\nTe-Form",
+		"\nKu-Form",
+		"\nConditional"}
+
+	kanjiMinusTwo := []rune(conjData.KanjiStart)
+	lastCharPos := len(kanjiMinusTwo) - 1
+	kanjiStart := kanjiMinusTwo[0:lastCharPos]
+
+	kanaMinusTwo := []rune(conjData.KanaStart)
+	lastCharPos = len(kanaMinusTwo) - 1
+	kanaStart := kanaMinusTwo[0:lastCharPos]
+
+	for i, end := range adjEndings {
+		allAdjConj = append(allAdjConj, Word{
+			Level:      adj.Level,
+			Kana:       string(kanaStart) + end,
+			Kanji:      string(kanjiStart) + end,
+			Definition: adj.Definition + adjEndDesc[i],
+		})
+	}
+	return allAdjConj
+}
+
 func CreateTrie() error {
-	words, err := CSVtoJson()
+	words, err := CSVtoJson("dictionary/vocab_N5-N1/complete.csv")
 	if err != nil {
 		return err
 	}
 
 	t := NewTrie()
 
-	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
-	if err != nil {
-		return err
-	}
+	//err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
+	//if err != nil {
+	//return err
+	//}
 
 	for _, word := range words {
-		if word.Type == "verb" {
-			t.Insert(word)
-		} else {
-			t.Insert(word)
+		conjugations := conjugator(word)
+		for _, conj := range conjugations {
+			t.Insert(conj)
 		}
 	}
 
-	err = t.SaveToFile()
+	err = t.SaveToFile("dictionary/vocab_trie/dictionary.json")
 	if err != nil {
 		return err
 	}
@@ -340,25 +582,25 @@ func (t *Trie) Insert(word Word) {
 	current.IsEnd = true
 }
 
-func (t *Trie) Search(word string) (string, bool) {
+func (t *Trie) Search(word string) (Word, bool) {
 	current := t.Root
 	for _, ch := range word {
 		charStr := string(ch)
 		if next, exists := current.Children[charStr]; exists {
 			current = next
 		} else {
-			return "", false
+			return Word{}, false
 		}
 	}
-	return current.Level, current.IsEnd
+	return Word{Level: current.Level, Kana: current.Reading, Kanji: word, Definition: current.Definition}, true
 }
 
-func (t *Trie) SaveToFile() error {
+func (t *Trie) SaveToFile(directory string) error {
 	data, err := json.MarshalIndent(t.Root, "", " ")
 	if err != nil {
 		return fmt.Errorf("Failed to serialize json: %v", err)
 	}
-	return os.WriteFile("dictionary/vocab_trie/dictionary.json", data, 0644)
+	return os.WriteFile(directory, data, 0644)
 }
 
 func (t *Trie) LoadFromFile(filename string) error {

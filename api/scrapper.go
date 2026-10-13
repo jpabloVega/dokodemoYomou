@@ -31,48 +31,6 @@ type Credits struct {
 	URL    string
 }
 
-func ScanTest() error {
-	t := vocabtrie.NewTrie()
-	err := t.LoadFromFile("dictionary/vocab_trie/vocabulary.json")
-	if err != nil {
-		return err
-	}
-	nCount := make(map[string]int)
-	contentsLine := "ある日、オリヴィアは夢を見た。婚約者のデイルが、義妹のグレースを好きだと言い、グレースも、デイルが好きだったと打ち明けられる夢"
-	splitLine := []rune(contentsLine)
-	var foundWords []string
-	start := 0
-	end := len(splitLine)
-	for true {
-		currWord := string(splitLine[start:end])
-		lvl, found := t.Search(currWord)
-		if found {
-			nCount[lvl] += 1
-			start += utf8.RuneCountInString(currWord)
-			end = len(splitLine)
-			foundWords = append(foundWords, currWord)
-			continue
-		}
-		end -= 1
-		if end == start {
-			start += 1
-			end = len(splitLine)
-		}
-		if start >= len(splitLine)-1 {
-			break
-		}
-	}
-	fmt.Println("Words found: ")
-	for _, word := range foundWords {
-		fmt.Printf("- %v\n", word)
-	}
-	fmt.Println("Words from every level")
-	for level, amount := range nCount {
-		fmt.Printf("%s: %d\n", level, amount)
-	}
-	return nil
-}
-
 func (c *Client) ScanBook(address string) error {
 	urlData, err := GetSiteInfo(address)
 	if err != nil {
@@ -87,20 +45,18 @@ func (c *Client) ScanBook(address string) error {
 	if err != nil {
 		return err
 	}
-	nCount := make(map[string]int)
-	var foundWords []string
+	nCount := make(map[string][]string)
 	for _, line := range chapterData.Contents {
 		splitLine := []rune(line)
 		start := 0
 		end := len(splitLine)
 		for true {
 			currWord := string(splitLine[start:end])
-			lvl, found := t.Search(currWord)
+			foundWord, found := t.Search(currWord)
 			if found {
-				nCount[lvl] += 1
+				nCount[foundWord.Level] = append(nCount[foundWord.Level], foundWord.Kanji)
 				start += utf8.RuneCountInString(currWord)
 				end = len(splitLine)
-				foundWords = append(foundWords, currWord)
 				continue
 			}
 			end -= 1
@@ -113,13 +69,16 @@ func (c *Client) ScanBook(address string) error {
 			}
 		}
 	}
-	fmt.Println("Words found: ")
-	for _, word := range foundWords {
-		fmt.Printf("- %v\n", word)
-	}
+
 	fmt.Println("Words from every level")
-	for level, amount := range nCount {
-		fmt.Printf("%s: %d\n", level, amount)
+	for key, value := range nCount {
+		fmt.Printf("%s : %d\n", key, len(value))
+		for i, word := range value {
+			fmt.Print(word + ", ")
+			if i%10 == 0 || i == len(value)-1 {
+				fmt.Println()
+			}
+		}
 	}
 	return nil
 }

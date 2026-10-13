@@ -17,5 +17,5 @@ var testCmd = &cobra.Command{
 }
 
 func helloTest(_ *cobra.Command, _ []string) {
-	vocabtrie.TestAdjConjugator()
+	vocabtrie.TestConjucator()
 }
