@@ -3,8 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -27,6 +25,7 @@ var (
 	oPDF            bool
 	oHTML           bool
 	oEPub           bool
+	vertical        bool
 )
 
 func init() {
@@ -34,9 +33,10 @@ func init() {
 
 	getCmd.Flags().IntVarP(&bodySize, "bodysize", "b", 14, "Size for the font of the body")
 	getCmd.Flags().IntVarP(&titleSize, "titlesize", "t", 16, "Size for the font of the titles")
-	getCmd.Flags().IntVarP(&chapterAmount, "volumesize", "v", 3, "Amount of chapter to download")
+	getCmd.Flags().IntVarP(&chapterAmount, "numchapter", "c", 3, "Amount of chapter to download")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
+	getCmd.Flags().BoolVarP(&vertical, "vertical", "v", false, "Export text in vertical(only availible to html format)")
 	getCmd.Flags().BoolVar(&oPDF, "pdf", false, "Output in PDF")
 	getCmd.Flags().BoolVar(&oHTML, "html", false, "Output in HTML")
 	getCmd.Flags().BoolVar(&oEPub, "epub", false, "Output in EPUB")
@@ -94,8 +94,15 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 	if err != nil {
 		return err
 	}
-	start := `<!DOCTYPE html>
-<html lang="jp">
+
+	var vertFormat string
+	if vertical {
+		vertFormat = `
+			writing-mode: vertical-rl;
+            -webkit-writing-mode: vertical-rl;`
+	}
+	resultHTML := `<!DOCTYPE html>
+<html lang="ja">
 <head>
     <meta charset="UTF-8">
     <title>` + bookCredits.Title + `</title>
@@ -103,38 +110,66 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
         body {
             font-family: serif;
             padding: 0;
-            margin: 0;
+            margin: 0;` + vertFormat + `
         }
         p {
-            text-indent: 1.5em; /* Standard book paragraph indent */
+            text-indent: 0;
             margin-top: 0;
             margin-bottom: 0;
-            text-align: justify; /* Kindle readers expect justified text */
+            text-align: justify;
         }
         h1, h2, h3 {
             text-align: center;
-            text-indent: 0; /* Don't indent headings */
+            text-indent: 0;
             margin-top: 1em;
             margin-bottom: 0.5em;
         }
-        .first-para {
-            text-indent: 0; /* Optional: First paragraph of a chapter usually isn't indented */
-        }
     </style>
-	</head>
-	<body>`
+</head>
+<body>
+
+`
+
 	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
+		var chapterData api.Chapter
 		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-		newStart, err := c.GetHTML(fullURL, start)
+		chapterData, err := c.GetSingleAddress(fullURL)
 		if err != nil {
 			return err
 		}
-		start = newStart
+		resultHTML += `	<h1>` + chapterData.Title + `</h1>
+
+`
+		var chapBody string
+		for _, body := range chapterData.Contents {
+			if body == "" {
+				continue
+			}
+			chapBody = `    <p>` + body + `</p>
+`
+			resultHTML += chapBody
+
+		}
+		resultHTML += chapBody + `
+
+    <mbp:pagebreak/>
+
+`
 	}
+
+	chapterTitle := fmt.Sprintf("書名： %s", bookCredits.Title)
+	authorCredit := fmt.Sprintf("作者： %s", bookCredits.Author)
+	chapterUrl := fmt.Sprintf("URL： %s", bookCredits.URL)
+
+	resultHTML += `    <h1>` + chapterTitle + `</h1>
+	<h1>` + authorCredit + `</h1>
+    <h1>` + chapterUrl + `</h1>
+</body>
+</html>`
 
 	filename := destinationPath + "/" + fileName + ".html"
 
-	err = os.WriteFile(filename, []byte(start), 0644)
+	err = os.WriteFile(filename, []byte(resultHTML), 0644)
 	if err != nil {
 		return err
 	}
@@ -157,24 +192,7 @@ func GetPDF(cmd *cobra.Command, address string, c *api.Client) error {
 	var chaptersData []api.Chapter
 	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
 		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-		req, err := http.NewRequest("GET", fullURL, nil)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("User-Agent", "export-novels-to-eReader-app")
-		res, err := c.HttpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer res.Body.Close()
-		if res.StatusCode != 200 {
-			return fmt.Errorf("Error reaching %v: %v\n", fullURL, res.Status)
-		}
-		data, err := io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-		chapterData, err := api.GetChapterData(string(data))
+		chapterData, err := c.GetSingleAddress(fullURL)
 		if err != nil {
 			return err
 		}

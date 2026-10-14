@@ -46,7 +46,8 @@ func ScanBookCommand(address string, c *api.Client) error {
 	if err != nil {
 		return err
 	}
-	chapterData, err := c.GetSingleAddress(urlData)
+	fullURL := fmt.Sprintf("%s/%d/", urlData.Url, urlData.StartIndex)
+	chapterData, err := c.GetSingleAddress(fullURL)
 	if err != nil {
 		return err
 	}

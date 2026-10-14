@@ -28,9 +28,8 @@ type Credits struct {
 	URL    string
 }
 
-func (c *Client) GetSingleAddress(address UrlInfo) (Chapter, error) {
-	fullURL := fmt.Sprintf("%s/%d/", address.Url, address.StartIndex)
-	req, err := http.NewRequest("GET", fullURL, nil)
+func (c *Client) GetSingleAddress(address string) (Chapter, error) {
+	req, err := http.NewRequest("GET", address, nil)
 	if err != nil {
 		return Chapter{}, err
 	}
@@ -122,7 +121,8 @@ func GetChapterData(data string) (Chapter, error) {
 	reg := regexp.MustCompile(`<\s*(.*?)\s*>`)
 	for _, line := range filteredBody {
 		res := reg.ReplaceAllString(line, "")
-		lines = append(lines, res)
+		clean := strings.TrimSpace(res)
+		lines = append(lines, clean)
 	}
 	if len(title[0]) < 2 {
 		return Chapter{}, errors.New("Regex failed to find title")
