@@ -9,11 +9,11 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "dodeyo",
-	Short: "Hugo is a very fast static site generator",
-	Long: `A Fast and Flexible Static Site Generator built with
-                love by spf13 and friends in Go.
-                Complete documentation is available at https://gohugo.io/documentation/`,
-	Run: GetContents,
+	Short: "The easiest way to import you favorite novel from syosetsu.",
+	Long: `Scan a novel to know the vocabulary level
+	Download it and save it to your e-Reader
+	Or email it to your kindle`,
+	RunE: GetContents,
 }
 
 func Execute() {

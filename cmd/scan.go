@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -23,21 +24,21 @@ var scanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Get the urls",
 	Long:  "Implement me",
-	Run:   ScanBook,
+	RunE:  ScanBook,
 }
 
-func ScanBook(_ *cobra.Command, args []string) {
+func ScanBook(_ *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		fmt.Println("No arguments given")
-		return
+		return errors.New("No argument given")
 	}
 	c := api.NewClient(5 * time.Second)
 	for _, arg := range args {
 		err := ScanBookCommand(arg, &c)
 		if err != nil {
-			fmt.Printf("Error scanning: %v", err)
+			return err
 		}
 	}
+	return nil
 }
 
 func ScanBookCommand(address string, c *api.Client) error {

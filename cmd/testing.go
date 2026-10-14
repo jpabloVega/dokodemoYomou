@@ -1,7 +1,9 @@
 package cmd
 
 import (
-	vocabtrie "github.com/jpabloVega/dokodemoYomou/dictionary/vocab_trie"
+	"time"
+
+	"github.com/jpabloVega/dokodemoYomou/api"
 	"github.com/spf13/cobra"
 )
 
@@ -13,9 +15,11 @@ var testCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Get the urls",
 	Long:  "Implement me",
-	Run:   helloTest,
+	RunE:  helloTest,
 }
 
-func helloTest(_ *cobra.Command, _ []string) {
-	vocabtrie.TestConjucator()
+func helloTest(_ *cobra.Command, args []string) error {
+	c := api.NewClient(5 * time.Second)
+	_, err := api.TestGetHTML(args[0], &c)
+	return err
 }

@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/jpabloVega/dokodemoYomou/api"
@@ -16,11 +18,16 @@ const (
 	MAXPAGEHEIGHT = 750.0
 )
 
-var bodySize int
-var titleSize int
-var chapterAmount int
-var destinationPath string
-var fileName string
+var (
+	bodySize        int
+	titleSize       int
+	chapterAmount   int
+	destinationPath string
+	fileName        string
+	oPDF            bool
+	oHTML           bool
+	oEPub           bool
+)
 
 func init() {
 	rootCmd.AddCommand(getCmd)
@@ -30,6 +37,11 @@ func init() {
 	getCmd.Flags().IntVarP(&chapterAmount, "volumesize", "v", 3, "Amount of chapter to download")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
+	getCmd.Flags().BoolVar(&oPDF, "pdf", false, "Output in PDF")
+	getCmd.Flags().BoolVar(&oHTML, "html", false, "Output in HTML")
+	getCmd.Flags().BoolVar(&oEPub, "epub", false, "Output in EPUB")
+	getCmd.MarkFlagsOneRequired("pdf", "html", "epub")
+	getCmd.MarkFlagsMutuallyExclusive("pdf", "html", "epub")
 
 }
 
@@ -37,68 +49,147 @@ var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get the urls",
 	Long:  "Implement me",
-	Run:   GetContents,
+	RunE:  GetContents,
 }
 
-func GetContents(cmd *cobra.Command, args []string) {
-	if len(args) == 0 {
-		fmt.Println("No arguments given")
-		return
-	}
+func GetContents(cmd *cobra.Command, args []string) error {
 	c := api.NewClient(5 * time.Second)
 
 	for _, address := range args {
-		var urlData api.UrlInfo
-		urlData, err := api.GetSiteInfo(address)
+		err := GetCommand(cmd, address, &c)
 		if err != nil {
-			fmt.Println(err)
-			return
+			return err
 		}
-		var pdfAddress string
-		var chaptersData []api.Chapter
-		for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
-			fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-			req, err := http.NewRequest("GET", fullURL, nil)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			req.Header.Set("User-Agent", "export-novels-to-eReader-app")
-			res, err := c.HttpClient.Do(req)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			defer res.Body.Close()
-			if res.StatusCode != 200 {
-				fmt.Printf("Error reaching %v: %v\n", fullURL, res.Status)
-				return
-			}
-			data, err := io.ReadAll(res.Body)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			chapterData, err := api.GetChapterData(string(data))
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			chaptersData = append(chaptersData, chapterData)
-		}
-		bookCredits, err := c.GetChapterAuthor(urlData.Url)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		pdfAddress, err = CreatePDF(chaptersData, bookCredits, fileName)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Printf("PDF created successfully at: %v", pdfAddress)
+	}
+	return nil
+}
+
+func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
+	if oPDF {
+		return GetPDF(cmd, address, c)
+	}
+	if oHTML {
+		return GetHTML(cmd, address, c)
+	}
+	if oEPub {
+		fmt.Println("Not implemented")
+		return nil
+	}
+	return nil
+}
+
+func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
+	if address == "" {
+		return errors.New("No argument given")
 	}
 
+	var urlData api.UrlInfo
+	urlData, err := api.GetSiteInfo(address)
+	if err != nil {
+		return err
+	}
+
+	var bookCredits api.Credits
+	bookCredits, err = c.GetChapterAuthor(urlData.Url)
+	if err != nil {
+		return err
+	}
+	start := `<!DOCTYPE html>
+<html lang="jp">
+<head>
+    <meta charset="UTF-8">
+    <title>` + bookCredits.Title + `</title>
+    <style>
+        body {
+            font-family: serif;
+            padding: 0;
+            margin: 0;
+        }
+        p {
+            text-indent: 1.5em; /* Standard book paragraph indent */
+            margin-top: 0;
+            margin-bottom: 0;
+            text-align: justify; /* Kindle readers expect justified text */
+        }
+        h1, h2, h3 {
+            text-align: center;
+            text-indent: 0; /* Don't indent headings */
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        .first-para {
+            text-indent: 0; /* Optional: First paragraph of a chapter usually isn't indented */
+        }
+    </style>
+	</head>
+	<body>`
+	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
+		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
+		newStart, err := c.GetHTML(fullURL, start)
+		if err != nil {
+			return err
+		}
+		start = newStart
+	}
+
+	filename := destinationPath + "/" + fileName + ".html"
+
+	err = os.WriteFile(filename, []byte(start), 0644)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully saved HTML to %s\n", filename)
+	return nil
+}
+
+func GetPDF(cmd *cobra.Command, address string, c *api.Client) error {
+	if address == "" {
+		return errors.New("No argument given")
+	}
+
+	var urlData api.UrlInfo
+	urlData, err := api.GetSiteInfo(address)
+	if err != nil {
+		return err
+	}
+
+	var chaptersData []api.Chapter
+	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
+		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("User-Agent", "export-novels-to-eReader-app")
+		res, err := c.HttpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			return fmt.Errorf("Error reaching %v: %v\n", fullURL, res.Status)
+		}
+		data, err := io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		chapterData, err := api.GetChapterData(string(data))
+		if err != nil {
+			return err
+		}
+		chaptersData = append(chaptersData, chapterData)
+	}
+	bookCredits, err := c.GetChapterAuthor(urlData.Url)
+	if err != nil {
+		return err
+	}
+	pdfAddress, err := CreatePDF(chaptersData, bookCredits, fileName)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("PDF created successfully at: %v", pdfAddress)
+	return nil
 }
 
 func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) (string, error) {
