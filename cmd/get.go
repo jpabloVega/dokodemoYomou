@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jpabloVega/dokodemoYomou/api"
+	"github.com/schollz/progressbar/v3"
 	"github.com/signintech/gopdf"
 	"github.com/spf13/cobra"
 )
@@ -31,9 +34,9 @@ var (
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	getCmd.Flags().IntVarP(&bodySize, "bodysize", "b", 14, "Size for the font of the body")
-	getCmd.Flags().IntVarP(&titleSize, "titlesize", "t", 16, "Size for the font of the titles")
-	getCmd.Flags().IntVarP(&chapterAmount, "numchapter", "c", 3, "Amount of chapter to download")
+	getCmd.Flags().IntVarP(&bodySize, "bodysize", "b", 14, "Size for the font of the body (only for pdf)")
+	getCmd.Flags().IntVarP(&titleSize, "titlesize", "t", 16, "Size for the font of the titles (only for pdf)")
+	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 3, "Amount of chapters to download (default 3)")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
 	getCmd.Flags().BoolVarP(&vertical, "vertical", "v", false, "Export text in vertical(only availible to html format)")
@@ -89,6 +92,25 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 		return err
 	}
 
+	chaptersChan := make(chan api.Chapter, chapterAmount)
+	var wg sync.WaitGroup
+
+	fmt.Println("Started go routine")
+
+	c.GetFromRange(urlData, chapterAmount, chaptersChan, &wg)
+
+	go func() {
+		wg.Wait()
+		close(chaptersChan)
+	}()
+
+	fmt.Println("Finished go routine")
+
+	chaptersData := make([]api.Chapter, chapterAmount)
+	for res := range chaptersChan {
+		chaptersData[res.Index] = res
+	}
+
 	var bookCredits api.Credits
 	bookCredits, err = c.GetChapterAuthor(urlData.Url)
 	if err != nil {
@@ -101,7 +123,9 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 			writing-mode: vertical-rl;
             -webkit-writing-mode: vertical-rl;`
 	}
-	resultHTML := `<!DOCTYPE html>
+
+	var html strings.Builder
+	header := `<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -130,46 +154,47 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 
 `
 
-	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
-		var chapterData api.Chapter
-		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-		chapterData, err := c.GetSingleAddress(fullURL)
-		if err != nil {
-			return err
-		}
-		resultHTML += `	<h1>` + chapterData.Title + `</h1>
+	html.WriteString(header)
+	var lineAmount int
+	for _, chap := range chaptersData {
+		lineAmount += len(chap.Contents)
+	}
+	chapterDownload := progressbar.Default(int64(lineAmount), "Creating html...")
 
-`
-		var chapBody string
-		for _, body := range chapterData.Contents {
+	for _, chapter := range chaptersData {
+		fmt.Fprintf(&html, `	<h1>%s</h1>
+
+`, chapter.Title)
+		for _, body := range chapter.Contents {
+			chapterDownload.Add(1)
 			if body == "" {
 				continue
 			}
-			chapBody = `    <p>` + body + `</p>
-`
-			resultHTML += chapBody
+			fmt.Fprintf(&html, `    <p>%s</p>
+`, body)
 
 		}
-		resultHTML += chapBody + `
+		html.WriteString(`
 
     <mbp:pagebreak/>
 
-`
+`)
+		chapterDownload.Add(1)
 	}
 
 	chapterTitle := fmt.Sprintf("書名： %s", bookCredits.Title)
 	authorCredit := fmt.Sprintf("作者： %s", bookCredits.Author)
 	chapterUrl := fmt.Sprintf("URL： %s", bookCredits.URL)
 
-	resultHTML += `    <h1>` + chapterTitle + `</h1>
-	<h1>` + authorCredit + `</h1>
-    <h1>` + chapterUrl + `</h1>
+	fmt.Fprintf(&html, `    <h1>%s</h1>
+	<h1>%s</h1>
+    <h1>%s</h1>
 </body>
-</html>`
+</html>`, chapterTitle, authorCredit, chapterUrl)
 
 	filename := destinationPath + "/" + fileName + ".html"
 
-	err = os.WriteFile(filename, []byte(resultHTML), 0644)
+	err = os.WriteFile(filename, []byte(html.String()), 0644)
 	if err != nil {
 		return err
 	}
@@ -189,15 +214,21 @@ func GetPDF(cmd *cobra.Command, address string, c *api.Client) error {
 		return err
 	}
 
-	var chaptersData []api.Chapter
-	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
-		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-		chapterData, err := c.GetSingleAddress(fullURL)
-		if err != nil {
-			return err
-		}
-		chaptersData = append(chaptersData, chapterData)
+	chaptersChan := make(chan api.Chapter, chapterAmount)
+	var wg sync.WaitGroup
+
+	c.GetFromRange(urlData, chapterAmount, chaptersChan, &wg)
+
+	go func() {
+		wg.Wait()
+		close(chaptersChan)
+	}()
+
+	chaptersData := make([]api.Chapter, chapterAmount)
+	for res := range chaptersChan {
+		chaptersData[res.Index] = res
 	}
+
 	bookCredits, err := c.GetChapterAuthor(urlData.Url)
 	if err != nil {
 		return err
@@ -224,7 +255,18 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 	if err != nil {
 		return "", err
 	}
+
+	var lineAmount int
+	for _, chap := range chapterData {
+		lineAmount += len(chap.Contents)
+	}
+	pdfProgress := progressbar.Default(int64(lineAmount), "Creating PDF...")
+
 	for _, chapter := range chapterData {
+
+		if chapter.Err != nil {
+			continue
+		}
 
 		pdf.AddPage()
 
@@ -246,6 +288,7 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 		}
 		pdf.SetX(50)
 		for _, line := range chapter.Contents {
+			pdfProgress.Add(1)
 			if line == "" {
 				continue
 			}

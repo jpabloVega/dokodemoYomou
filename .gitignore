@@ -1,3 +1,4 @@
-tmpPDF
-pdf
+tmpPDF/
+pdf/
 *.pdf
+*.html

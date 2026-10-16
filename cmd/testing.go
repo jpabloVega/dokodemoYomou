@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"time"
+	"fmt"
 
-	"github.com/jpabloVega/dokodemoYomou/api"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +18,6 @@ var testCmd = &cobra.Command{
 }
 
 func helloTest(_ *cobra.Command, args []string) error {
-	c := api.NewClient(5 * time.Second)
-	_, err := api.TestGetHTML(args[0], &c)
-	return err
+	fmt.Println("not implemented")
+	return nil
 }

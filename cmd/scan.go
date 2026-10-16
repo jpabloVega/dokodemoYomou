@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -46,18 +47,32 @@ func ScanBookCommand(address string, c *api.Client) error {
 	if err != nil {
 		return err
 	}
-	fullURL := fmt.Sprintf("%s/%d/", urlData.Url, urlData.StartIndex)
-	chapterData, err := c.GetSingleAddress(fullURL)
-	if err != nil {
-		return err
+	chaptersChan := make(chan api.Chapter, chapterAmount)
+	var wg sync.WaitGroup
+
+	c.GetFromRange(urlData, chapterAmount, chaptersChan, &wg)
+
+	go func() {
+		wg.Wait()
+		close(chaptersChan)
+	}()
+
+	chaptersData := make([]api.Chapter, chapterAmount)
+	for res := range chaptersChan {
+		chaptersData[res.Index] = res
+		if res.Err != nil {
+			fmt.Println(res.Err)
+		}
 	}
+
+	chapter := chaptersData[0]
 	t := vocabtrie.NewTrie()
 	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
 	if err != nil {
 		return err
 	}
 	nCount := make(map[string][]string)
-	for _, line := range chapterData.Contents {
+	for _, line := range chapter.Contents {
 		splitLine := []rune(line)
 		start := 0
 		end := len(splitLine)

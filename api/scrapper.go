@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type UrlInfo struct {
@@ -18,8 +19,10 @@ type UrlInfo struct {
 }
 
 type Chapter struct {
+	Index    int
 	Title    string
 	Contents []string
+	Err      error
 }
 
 type Credits struct {
@@ -28,29 +31,38 @@ type Credits struct {
 	URL    string
 }
 
-func (c *Client) GetSingleAddress(address string) (Chapter, error) {
+func (c *Client) GetSingleAddress(index int, address string, ch chan Chapter, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	req, err := http.NewRequest("GET", address, nil)
 	if err != nil {
-		return Chapter{}, err
+		ch <- Chapter{Err: err}
+		return
 	}
 	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
+
 	res, err := c.HttpClient.Do(req)
 	if err != nil {
-		return Chapter{}, err
+		ch <- Chapter{Err: err}
+		return
 	}
 	defer res.Body.Close()
-	if res.StatusCode > 400 {
-		return Chapter{}, fmt.Errorf("Error: %v\n", res.Status)
+
+	if res.StatusCode != 200 {
+		ch <- Chapter{Err: fmt.Errorf("Error reaching %v: %v", address, res.Status)}
+		return
 	}
 	data, err := io.ReadAll(res.Body)
 	if err != nil {
-		return Chapter{}, err
+		ch <- Chapter{Err: err}
+		return
 	}
-	chapterData, err := GetChapterData(string(data))
+	chapterData, err := GetChapterData(string(data), index)
 	if err != nil {
-		return Chapter{}, err
+		ch <- Chapter{Err: err}
+		return
 	}
-	return chapterData, err
+	ch <- chapterData
 }
 
 func GetSiteInfo(baseURL string) (UrlInfo, error) {
@@ -111,7 +123,7 @@ func (c *Client) GetChapterAuthor(url string) (Credits, error) {
 	}, nil
 }
 
-func GetChapterData(data string) (Chapter, error) {
+func GetChapterData(data string, index int) (Chapter, error) {
 	var lines []string
 	titleFind := regexp.MustCompile(`<h1 class="p-novel__title p-novel__title--rensai">\s*(.*?)\s*</h1>`)
 	title := titleFind.FindAllStringSubmatch(string(data), 1)
@@ -128,65 +140,20 @@ func GetChapterData(data string) (Chapter, error) {
 		return Chapter{}, errors.New("Regex failed to find title")
 	}
 	return Chapter{
+		Index:    index,
 		Title:    title[0][1],
 		Contents: lines,
 	}, nil
 
 }
 
-func (c *Client) GetHTML(url, start string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
-	res, err := c.HttpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("Error reaching %v: %v\n", url, res.Status)
-	}
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-	htmlData, _ := GetRawChapterData(string(data), start)
-	fmt.Println(htmlData)
-	return htmlData, nil
-}
+func (c *Client) GetFromRange(urlData UrlInfo, chapterAmount int, ch chan Chapter, wg *sync.WaitGroup) {
+	chapIndex := 0
 
-func TestGetHTML(url string, c *Client) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", err
+	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
+		wg.Add(1)
+		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
+		go c.GetSingleAddress(chapIndex, fullURL, ch, wg)
+		chapIndex++
 	}
-	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
-	res, err := c.HttpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("Error reaching %v: %v\n", url, res.Status)
-	}
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return "", err
-	}
-
-	start := `<div style="page-break-after: always;"></div>
-	`
-	htmlData, _ := GetRawChapterData(string(data), start)
-	fmt.Println(htmlData)
-	return htmlData, nil
-}
-
-func GetRawChapterData(data, start string) (string, error) {
-	topCroped := strings.Split(data, `<h1 class="p-novel__title p-novel__title--rensai">`)
-	novel := strings.Split(topCroped[1], `</div><!-- /.p-novel__body -->`)
-	step := `
-	`
-	return start + `<h1 class="p-novel__title p-novel__title--rensai">` + novel[0] + step, nil
 }
