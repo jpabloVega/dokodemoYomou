@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 type UrlInfo struct {
@@ -39,7 +42,7 @@ func (c *Client) GetSingleAddress(index int, address string, ch chan Chapter, wg
 		ch <- Chapter{Err: err}
 		return
 	}
-	req.Header.Set("User-Agent", "export-novels-to-eReader-app")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0")
 
 	res, err := c.HttpClient.Do(req)
 	if err != nil {
@@ -150,10 +153,15 @@ func GetChapterData(data string, index int) (Chapter, error) {
 func (c *Client) GetFromRange(urlData UrlInfo, chapterAmount int, ch chan Chapter, wg *sync.WaitGroup) {
 	chapIndex := 0
 
+	downloadBar := progressbar.Default(int64(chapterAmount), "Downloading chapters...")
 	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
 		wg.Add(1)
 		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
 		go c.GetSingleAddress(chapIndex, fullURL, ch, wg)
 		chapIndex++
+		downloadBar.Add(1)
+		if i%5 == 0 {
+			time.Sleep(1 * time.Second)
+		}
 	}
 }

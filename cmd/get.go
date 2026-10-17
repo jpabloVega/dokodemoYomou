@@ -34,9 +34,9 @@ var (
 func init() {
 	rootCmd.AddCommand(getCmd)
 
-	getCmd.Flags().IntVarP(&bodySize, "bodysize", "b", 14, "Size for the font of the body (only for pdf)")
-	getCmd.Flags().IntVarP(&titleSize, "titlesize", "t", 16, "Size for the font of the titles (only for pdf)")
-	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 3, "Amount of chapters to download (default 3)")
+	getCmd.Flags().IntVar(&bodySize, "bodysize", 14, "Size for the font of the body (only for pdf)")
+	getCmd.Flags().IntVar(&titleSize, "titlesize", 16, "Size for the font of the titles (only for pdf)")
+	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to download (default 1)")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
 	getCmd.Flags().BoolVarP(&vertical, "vertical", "v", false, "Export text in vertical(only availible to html format)")
@@ -95,16 +95,12 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 	chaptersChan := make(chan api.Chapter, chapterAmount)
 	var wg sync.WaitGroup
 
-	fmt.Println("Started go routine")
-
 	c.GetFromRange(urlData, chapterAmount, chaptersChan, &wg)
 
 	go func() {
 		wg.Wait()
 		close(chaptersChan)
 	}()
-
-	fmt.Println("Finished go routine")
 
 	chaptersData := make([]api.Chapter, chapterAmount)
 	for res := range chaptersChan {
@@ -116,6 +112,12 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 	if err != nil {
 		return err
 	}
+
+	var lineAmount int
+	for _, chap := range chaptersData {
+		lineAmount += len(chap.Contents)
+	}
+	chapterDownload := progressbar.Default(int64(lineAmount), "Creating html...")
 
 	var vertFormat string
 	if vertical {
@@ -155,11 +157,6 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 `
 
 	html.WriteString(header)
-	var lineAmount int
-	for _, chap := range chaptersData {
-		lineAmount += len(chap.Contents)
-	}
-	chapterDownload := progressbar.Default(int64(lineAmount), "Creating html...")
 
 	for _, chapter := range chaptersData {
 		fmt.Fprintf(&html, `	<h1>%s</h1>
@@ -199,7 +196,7 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 		return err
 	}
 
-	fmt.Printf("Successfully saved HTML to %s\n", filename)
+	fmt.Printf("Successfully created HTML at %s\n", filename)
 	return nil
 }
 

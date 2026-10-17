@@ -9,15 +9,19 @@ import (
 
 	"github.com/jpabloVega/dokodemoYomou/api"
 	vocabtrie "github.com/jpabloVega/dokodemoYomou/dictionary/vocab_trie"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
-var verbose bool
+var (
+	verbose bool
+)
 
 func init() {
 	rootCmd.AddCommand(scanCmd)
 
 	scanCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show details")
+	scanCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to scan (default 1)")
 
 }
 
@@ -65,51 +69,62 @@ func ScanBookCommand(address string, c *api.Client) error {
 		}
 	}
 
-	chapter := chaptersData[0]
 	t := vocabtrie.NewTrie()
 	err = t.LoadFromFile("dictionary/vocab_trie/dictionary.json")
 	if err != nil {
 		return err
 	}
 	nCount := make(map[string][]string)
-	for _, line := range chapter.Contents {
-		splitLine := []rune(line)
-		start := 0
-		end := len(splitLine)
-		for true {
-			currWord := string(splitLine[start:end])
-			foundWord, found := t.Search(currWord)
-			if found {
-				nCount[foundWord.Level] = append(nCount[foundWord.Level], foundWord.Kanji)
-				start += utf8.RuneCountInString(currWord)
-				end = len(splitLine)
+
+	for _, chapter := range chaptersData {
+		chapterLen := len(chapter.Contents)
+		chapterProgress := progressbar.Default(int64(chapterLen), "Scanning chapter...")
+		for _, line := range chapter.Contents {
+			chapterProgress.Add(1)
+			if line == "" {
 				continue
 			}
-			end -= 1
-			if end == start {
-				start += 1
-				end = len(splitLine)
-			}
-			if start >= len(splitLine)-1 {
-				break
-			}
-		}
-	}
-
-	fmt.Println("Words from every level")
-	for key, value := range nCount {
-		if key == "" {
-			continue
-		}
-		fmt.Printf("%s : %d\n", key, len(value))
-		if verbose {
-			for i, word := range value {
-				fmt.Print(word + "  ")
-				if i != 0 && i%11 == 0 || i == len(value)-1 {
-					fmt.Println()
+			splitLine := []rune(line)
+			start := 0
+			end := len(splitLine)
+			for true {
+				currWord := string(splitLine[start:end])
+				foundWord, found := t.Search(currWord)
+				if found {
+					nCount[foundWord.Level] = append(nCount[foundWord.Level], foundWord.Kanji)
+					start += utf8.RuneCountInString(currWord)
+					end = len(splitLine)
+					continue
+				}
+				end -= 1
+				if end == start {
+					start += 1
+					end = len(splitLine)
+				}
+				if start >= len(splitLine)-1 {
+					break
 				}
 			}
 		}
 	}
+
+	if verbose {
+		fmt.Printf("N1: %v\n", nCount["n1"])
+		fmt.Println("")
+		fmt.Printf("N2: %v\n", nCount["n2"])
+		fmt.Println("")
+		fmt.Printf("N3: %v\n", nCount["n3"])
+		fmt.Println("")
+		fmt.Printf("N4: %v\n", nCount["n4"])
+		fmt.Println("")
+		fmt.Printf("N5: %v\n", nCount["n5"])
+		fmt.Println("")
+	}
+	fmt.Println("Words from every level")
+	fmt.Printf("N1: %d\n", len(nCount["n1"]))
+	fmt.Printf("N2: %d\n", len(nCount["n2"]))
+	fmt.Printf("N3: %d\n", len(nCount["n3"]))
+	fmt.Printf("N4: %d\n", len(nCount["n4"]))
+	fmt.Printf("N5: %d\n", len(nCount["n5"]))
 	return nil
 }
