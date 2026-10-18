@@ -4,11 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/jpabloVega/dokodemoYomou/api"
+	"github.com/raitucarp/epub"
 	"github.com/schollz/progressbar/v3"
 	"github.com/signintech/gopdf"
 	"github.com/spf13/cobra"
@@ -68,20 +71,6 @@ func GetContents(cmd *cobra.Command, args []string) error {
 }
 
 func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
-	if oPDF {
-		return GetPDF(cmd, address, c)
-	}
-	if oHTML {
-		return GetHTML(cmd, address, c)
-	}
-	if oEPub {
-		fmt.Println("Not implemented")
-		return nil
-	}
-	return nil
-}
-
-func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 	if address == "" {
 		return errors.New("No argument given")
 	}
@@ -117,7 +106,21 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 	for _, chap := range chaptersData {
 		lineAmount += len(chap.Contents)
 	}
-	chapterDownload := progressbar.Default(int64(lineAmount), "Creating html...")
+
+	if oPDF {
+		return GetPDF(chaptersData, bookCredits, lineAmount)
+	}
+	if oHTML {
+		return GetHTML(chaptersData, bookCredits, lineAmount)
+	}
+	if oEPub {
+		return GetEPub(chaptersData, bookCredits, lineAmount)
+	}
+	return nil
+}
+
+func GetHTML(chaptersData []api.Chapter, bookCredits api.Credits, lineAmount int) error {
+	htmlProgress := progressbar.Default(int64(lineAmount), "Creating html...")
 
 	var vertFormat string
 	if vertical {
@@ -163,7 +166,7 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 
 `, chapter.Title)
 		for _, body := range chapter.Contents {
-			chapterDownload.Add(1)
+			htmlProgress.Add(1)
 			if body == "" {
 				continue
 			}
@@ -176,7 +179,7 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
     <mbp:pagebreak/>
 
 `)
-		chapterDownload.Add(1)
+		htmlProgress.Add(1)
 	}
 
 	chapterTitle := fmt.Sprintf("書名： %s", bookCredits.Title)
@@ -189,56 +192,21 @@ func GetHTML(cmd *cobra.Command, address string, c *api.Client) error {
 </body>
 </html>`, chapterTitle, authorCredit, chapterUrl)
 
-	filename := destinationPath + "/" + fileName + ".html"
+	fileNameExt := fmt.Sprintf("%v.html", fileName)
+	filePath := filepath.Join(destinationPath, fileNameExt)
 
-	err = os.WriteFile(filename, []byte(html.String()), 0644)
+	err := os.WriteFile(filePath, []byte(html.String()), 0644)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully created HTML at %s\n", filename)
+	fmt.Printf("Successfully created HTML at %s\n", filePath)
 	return nil
 }
 
-func GetPDF(cmd *cobra.Command, address string, c *api.Client) error {
-	if address == "" {
-		return errors.New("No argument given")
-	}
+func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) error {
+	pdfProgress := progressbar.Default(int64(lineAmount), "Creating PDF...")
 
-	var urlData api.UrlInfo
-	urlData, err := api.GetSiteInfo(address)
-	if err != nil {
-		return err
-	}
-
-	chaptersChan := make(chan api.Chapter, chapterAmount)
-	var wg sync.WaitGroup
-
-	c.GetFromRange(urlData, chapterAmount, chaptersChan, &wg)
-
-	go func() {
-		wg.Wait()
-		close(chaptersChan)
-	}()
-
-	chaptersData := make([]api.Chapter, chapterAmount)
-	for res := range chaptersChan {
-		chaptersData[res.Index] = res
-	}
-
-	bookCredits, err := c.GetChapterAuthor(urlData.Url)
-	if err != nil {
-		return err
-	}
-	pdfAddress, err := CreatePDF(chaptersData, bookCredits, fileName)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("PDF created successfully at: %v", pdfAddress)
-	return nil
-}
-
-func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) (string, error) {
 	// Create pdf
 	pdf := gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{PageSize: *gopdf.PageSizeA4})
@@ -246,18 +214,12 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 	// Set fonts
 	err := pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Regular.ttf", gopdf.TtfOption{Style: gopdf.Regular})
 	if err != nil {
-		return "", err
+		return err
 	}
 	err = pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Bold.ttf", gopdf.TtfOption{Style: gopdf.Bold})
 	if err != nil {
-		return "", err
+		return err
 	}
-
-	var lineAmount int
-	for _, chap := range chapterData {
-		lineAmount += len(chap.Contents)
-	}
-	pdfProgress := progressbar.Default(int64(lineAmount), "Creating PDF...")
 
 	for _, chapter := range chapterData {
 
@@ -269,7 +231,7 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 
 		err = pdf.SetFont("NotoSansJP", "B", titleSize)
 		if err != nil {
-			return "", err
+			return err
 		}
 
 		// Set title
@@ -281,7 +243,7 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 		// Set body
 		err = pdf.SetFont("NotoSansJP", "", bodySize)
 		if err != nil {
-			return "", err
+			return err
 		}
 		pdf.SetX(50)
 		for _, line := range chapter.Contents {
@@ -299,14 +261,14 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 			bodyRect := &gopdf.Rect{W: 500, H: LINEHEIGHT}
 			err = pdf.MultiCell(bodyRect, line)
 			if err != nil {
-				return "", err
+				return err
 			}
 		}
 	}
 	pdf.AddPage()
 	err = pdf.SetFont("NotoSansJP", "B", titleSize)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	chapterTitle := fmt.Sprintf("書名： %s", credits.Title)
@@ -323,13 +285,121 @@ func CreatePDF(chapterData []api.Chapter, credits api.Credits, fileName string) 
 	pdf.Cell(bodyRect, chapterUrl)
 	pdf.Br(40)
 
-	fullPath := fmt.Sprintf("%s/%s.pdf", destinationPath, fileName)
 	if fileName == "" {
 		fileName = credits.Title
 	}
-	err = pdf.WritePdf(fullPath)
+	fileNameExt := fmt.Sprintf("%v.pdf", fileName)
+	filePath := filepath.Join(destinationPath, fileNameExt)
+
+	err = pdf.WritePdf(filePath)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return fullPath, nil
+
+	fmt.Printf("Pdf successfully created at: %s", filePath)
+	return nil
+}
+
+func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) error {
+	ePubProgress := progressbar.Default(int64(lineAmount), "Creating Epub...")
+	id := uuid.New()
+
+	w := epub.New(fmt.Sprintf("urn:uuid:%s", id.String()))
+
+	w.Title(credits.Title)
+	w.Author(credits.Author)
+	w.Languages("ja")
+
+	var styleCSS []byte
+	if vertical {
+		styleCSS = []byte(`
+html {
+writing-mode: vertical-rl;
+-webkit-writing-mode: vertical-rl;
+-epub-writing-mode: vertical-rl;
+font-family: "serif", "Yu Mincho", "MS Mincho", serif;
+}
+p {
+text-indent: 1em;
+margin: 0;
+line-height: 1.8;
+}
+.tate-chu-yoko {
+-webkit-text-combine: horizontal;
+-epub-text-combine: horizontal;
+text-combine-upright: all;
+}
+`)
+	} else {
+		styleCSS = []byte(`
+html {
+font-family: "serif", "Yu Mincho", "MS Mincho", serif;
+}
+p {
+text-indent: 1em;
+margin: 0;
+line-height: 1.8;
+}
+`)
+	}
+
+	w.AddContent("style.css", styleCSS)
+
+	var tocItems []epub.TOC
+
+	for i, chapter := range chapterData {
+		currChapter := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://w3.org" xml:lang="ja" lang="ja">
+<head>
+    <title>%s</title>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+	<h1>%s</h1>
+`, chapter.Title, chapter.Title)
+		var xhtml strings.Builder
+		xhtml.WriteString(currChapter)
+		for _, line := range chapter.Contents {
+			ePubProgress.Add(1)
+			if line == "" {
+				continue
+			}
+			currLine := fmt.Sprintf(`	<p>%s</p>
+`, line)
+			xhtml.WriteString(currLine)
+		}
+
+		endLines := `</body>
+</html>`
+		xhtml.WriteString(endLines)
+		chapterName := fmt.Sprintf("Chapter-%d.xhtml", i)
+
+		w.AddContent(chapterName, []byte(xhtml.String()))
+
+		tocItems = append(tocItems, epub.TOC{
+			Title: chapter.Title,
+			Href:  chapterName,
+		})
+	}
+
+	mainTOC := epub.TOC{
+		Title: "目次",
+		Items: tocItems,
+	}
+
+	err := w.TableOfContents("toc", mainTOC)
+	if err != nil {
+		return err
+	}
+
+	fileNameExt := fmt.Sprintf("%s.epub", fileName)
+	filePath := filepath.Join(destinationPath, fileNameExt)
+
+	err = w.Write(filePath)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully created epub at: %s\n", filePath)
+	return nil
 }
