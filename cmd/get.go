@@ -310,40 +310,43 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 	w.Author(credits.Author)
 	w.Languages("ja")
 
-	var styleCSS []byte
-	if vertical {
-		styleCSS = []byte(`
-html {
-writing-mode: vertical-rl;
--webkit-writing-mode: vertical-rl;
--epub-writing-mode: vertical-rl;
-font-family: "serif", "Yu Mincho", "MS Mincho", serif;
-}
-p {
-text-indent: 1em;
-margin: 0;
-line-height: 1.8;
-}
-.tate-chu-yoko {
--webkit-text-combine: horizontal;
--epub-text-combine: horizontal;
-text-combine-upright: all;
-}
-`)
-	} else {
-		styleCSS = []byte(`
-html {
-font-family: "serif", "Yu Mincho", "MS Mincho", serif;
-}
-p {
-text-indent: 1em;
-margin: 0;
-line-height: 1.8;
-}
-`)
-	}
+	var cssStyling string
 
-	w.AddContent("style.css", styleCSS)
+	if vertical {
+		w.Direction("rtl") // Mantiene la lectura global de derecha a izquierda
+		cssStyling = `
+	<style>
+		html {
+			writing-mode: vertical-rl;
+			-webkit-writing-mode: vertical-rl;
+			-epub-writing-mode: vertical-rl;
+			font-family: "serif", "Yu Mincho", "MS Mincho", serif;
+		}
+		p {
+			text-indent: 1em;
+			margin: 0;
+			line-height: 1.8;
+		}
+		.tate-chu-yoko {
+			-webkit-text-combine: horizontal;
+			-epub-text-combine: horizontal;
+			text-combine-upright: all;
+		}
+	</style>`
+	} else {
+		w.Direction("ltr")
+		cssStyling = `
+	<style>
+		html {
+			font-family: "serif", "Yu Mincho", "MS Mincho", serif;
+		}
+		p {
+			text-indent: 1em;
+			margin: 0;
+			line-height: 1.8;
+		}
+	</style>`
+	}
 
 	var tocItems []epub.TOC
 
@@ -352,11 +355,11 @@ line-height: 1.8;
 <html xmlns="http://w3.org" xml:lang="ja" lang="ja">
 <head>
     <title>%s</title>
-    <link rel="stylesheet" type="text/css" href="style.css"/>
+%s
 </head>
 <body>
 	<h1>%s</h1>
-`, chapter.Title, chapter.Title)
+`, chapter.Title, cssStyling, chapter.Title)
 		var xhtml strings.Builder
 		xhtml.WriteString(currChapter)
 		for _, line := range chapter.Contents {
