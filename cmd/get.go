@@ -11,6 +11,8 @@ import (
 	"uuid"
 
 	"github.com/jpabloVega/dokodemoYomou/api"
+	"github.com/jpabloVega/dokodemoYomou/database"
+	"github.com/jpabloVega/dokodemoYomou/email"
 	"github.com/raitucarp/epub"
 	"github.com/schollz/progressbar/v3"
 	"github.com/signintech/gopdf"
@@ -25,6 +27,7 @@ const (
 var (
 	bodySize        int
 	titleSize       int
+	startFrom       int
 	chapterAmount   int
 	destinationPath string
 	fileName        string
@@ -32,6 +35,7 @@ var (
 	oHTML           bool
 	oEPub           bool
 	vertical        bool
+	mailToKindle    bool
 )
 
 func init() {
@@ -40,9 +44,11 @@ func init() {
 	getCmd.Flags().IntVar(&bodySize, "bodysize", 14, "Size for the font of the body (only for pdf)")
 	getCmd.Flags().IntVar(&titleSize, "titlesize", 16, "Size for the font of the titles (only for pdf)")
 	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to download")
+	getCmd.Flags().IntVar(&startFrom, "start", 0, "Start from chapter")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
 	getCmd.Flags().BoolVarP(&vertical, "vertical", "v", false, "Export text in vertical(only availible to html format)")
+	getCmd.Flags().BoolVarP(&mailToKindle, "mailToKindle", "m", false, "Mail to kindle")
 	getCmd.Flags().BoolVar(&oPDF, "pdf", false, "Output in PDF")
 	getCmd.Flags().BoolVar(&oHTML, "html", false, "Output in HTML")
 	getCmd.Flags().BoolVar(&oEPub, "epub", false, "Output in EPUB")
@@ -82,6 +88,21 @@ func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
 		return err
 	}
 
+	db, err := database.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	bookExists, dbBook, err := database.GetBook(db, urlData.Url)
+	if bookExists {
+		urlData.StartIndex = dbBook.LastDownload + 1
+	}
+
+	if startFrom != 0 {
+		urlData.StartIndex = startFrom
+	}
+
 	chaptersChan := make(chan api.Chapter, chapterAmount)
 	var wg sync.WaitGroup
 
@@ -93,8 +114,18 @@ func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
 	}()
 
 	chaptersData := make([]api.Chapter, chapterAmount)
+	var lastDownload = urlData.StartIndex
 	for res := range chaptersChan {
+		if res.Err != nil {
+			fmt.Printf("Error in chapter %s: %v", res.Title, res.Err)
+			continue
+		}
+		lastDownload++
 		chaptersData[res.Index] = res
+	}
+
+	if len(chaptersData) == 0 {
+		return errors.New("No chapters to create document")
 	}
 
 	var bookCredits api.Credits
@@ -108,19 +139,44 @@ func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
 		lineAmount += len(chap.Contents)
 	}
 
+	var docs []string
+
 	if oPDF {
-		return GetPDF(chaptersData, bookCredits, lineAmount)
+		docs, err = GetPDF(chaptersData, bookCredits, lineAmount)
 	}
 	if oHTML {
-		return GetHTML(chaptersData, bookCredits, lineAmount)
+		docs, err = GetHTML(chaptersData, bookCredits, lineAmount)
 	}
 	if oEPub {
-		return GetEPub(chaptersData, bookCredits, lineAmount)
+		docs, err = GetEPub(chaptersData, bookCredits, lineAmount)
 	}
+	if err != nil {
+		return err
+	}
+
+	newBook := database.DBBook{
+		Name:         bookCredits.Title,
+		Link:         urlData.Url,
+		LastDownload: lastDownload,
+		Like:         false,
+		DownloadedAt: time.Now(),
+	}
+	err = database.SaveBook(db, newBook)
+	if err != nil {
+		return err
+	}
+
+	if mailToKindle {
+		err = email.MailToKindle(docs)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func GetHTML(chaptersData []api.Chapter, bookCredits api.Credits, lineAmount int) error {
+func GetHTML(chaptersData []api.Chapter, bookCredits api.Credits, lineAmount int) ([]string, error) {
 	htmlProgress := progressbar.Default(int64(lineAmount), "Creating html...")
 
 	var vertFormat string
@@ -198,14 +254,14 @@ func GetHTML(chaptersData []api.Chapter, bookCredits api.Credits, lineAmount int
 
 	err := os.WriteFile(filePath, []byte(html.String()), 0644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("Successfully created HTML at %s\n", filePath)
-	return nil
+	return []string{filePath}, nil
 }
 
-func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) error {
+func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) ([]string, error) {
 	pdfProgress := progressbar.Default(int64(lineAmount), "Creating PDF...")
 
 	// Create pdf
@@ -215,11 +271,11 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) erro
 	// Set fonts
 	err := pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Regular.ttf", gopdf.TtfOption{Style: gopdf.Regular})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = pdf.AddTTFFontWithOption("NotoSansJP", "ttf/static/NotoSansJP-Bold.ttf", gopdf.TtfOption{Style: gopdf.Bold})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, chapter := range chapterData {
@@ -232,7 +288,7 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) erro
 
 		err = pdf.SetFont("NotoSansJP", "B", titleSize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Set title
@@ -244,7 +300,7 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) erro
 		// Set body
 		err = pdf.SetFont("NotoSansJP", "", bodySize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pdf.SetX(50)
 		for _, line := range chapter.Contents {
@@ -262,14 +318,14 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) erro
 			bodyRect := &gopdf.Rect{W: 500, H: LINEHEIGHT}
 			err = pdf.MultiCell(bodyRect, line)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	pdf.AddPage()
 	err = pdf.SetFont("NotoSansJP", "B", titleSize)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	chapterTitle := fmt.Sprintf("書名： %s", credits.Title)
@@ -294,14 +350,14 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) erro
 
 	err = pdf.WritePdf(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	fmt.Printf("Pdf successfully created at: %s", filePath)
-	return nil
+	fmt.Printf("Pdf successfully created at: %s\n", filePath)
+	return []string{filePath}, nil
 }
 
-func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) error {
+func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) ([]string, error) {
 	ePubProgress := progressbar.Default(int64(lineAmount), "Creating Epub...")
 	id := uuid.New()
 
@@ -400,7 +456,7 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 
 	err := w.TableOfContents("toc", mainTOC)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fileNameExt := fmt.Sprintf("%s.epub", fileName)
@@ -408,9 +464,9 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 
 	err = w.Write(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("Successfully created epub at: %s\n", filePath)
-	return nil
+	return []string{filePath}, nil
 }

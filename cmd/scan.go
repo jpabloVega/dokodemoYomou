@@ -21,7 +21,7 @@ func init() {
 	rootCmd.AddCommand(scanCmd)
 
 	scanCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show details")
-	scanCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to scan (default 1)")
+	//scanCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to scan (default 1)")
 
 }
 
