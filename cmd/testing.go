@@ -18,6 +18,6 @@ var testCmd = &cobra.Command{
 }
 
 func helloTest(_ *cobra.Command, args []string) error {
-	fmt.Println("not implemented")
+	fmt.Println("Not implemented")
 	return nil
 }

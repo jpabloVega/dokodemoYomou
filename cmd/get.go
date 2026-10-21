@@ -39,7 +39,7 @@ func init() {
 
 	getCmd.Flags().IntVar(&bodySize, "bodysize", 14, "Size for the font of the body (only for pdf)")
 	getCmd.Flags().IntVar(&titleSize, "titlesize", 16, "Size for the font of the titles (only for pdf)")
-	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to download (default 1)")
+	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to download")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")
 	getCmd.Flags().BoolVarP(&vertical, "vertical", "v", false, "Export text in vertical(only availible to html format)")
@@ -55,6 +55,7 @@ var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Get the urls",
 	Long:  "Implement me",
+	Args:  cobra.ExactArgs(1),
 	RunE:  GetContents,
 }
 
@@ -311,9 +312,11 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 	w.Languages("ja")
 
 	var cssStyling string
+	var vertHeader string
 
 	if vertical {
-		w.Direction("rtl") // Mantiene la lectura global de derecha a izquierda
+		w.Direction("rtl")
+		vertHeader = ` dir="rtl"`
 		cssStyling = `
 	<style>
 		html {
@@ -334,7 +337,6 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 		}
 	</style>`
 	} else {
-		w.Direction("ltr")
 		cssStyling = `
 	<style>
 		html {
@@ -348,18 +350,24 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) err
 	</style>`
 	}
 
+	w.MetaContent(map[string]string{
+		"rendition:layout":      "reflowable",
+		"rendition:orientation": "auto",
+	})
+
 	var tocItems []epub.TOC
 
 	for i, chapter := range chapterData {
 		currChapter := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://w3.org" xml:lang="ja" lang="ja">
+<!DOCTYPE html>
+<html xmlns="http://w3.org"%s xml:lang="ja" lang="ja">
 <head>
     <title>%s</title>
 %s
 </head>
 <body>
 	<h1>%s</h1>
-`, chapter.Title, cssStyling, chapter.Title)
+`, vertHeader, chapter.Title, cssStyling, chapter.Title)
 		var xhtml strings.Builder
 		xhtml.WriteString(currChapter)
 		for _, line := range chapter.Contents {
