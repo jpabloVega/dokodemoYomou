@@ -39,7 +39,7 @@ func SetPassword(email string) (string, error) {
 func GetPassword(email string) (string, error) {
 	password, err := keyring.Get("EmailDodeyo", email)
 	if err != nil {
-		fmt.Println("Password not found in keyring, please introduce the password again\n")
+		fmt.Printf("Password for %s not found in keyring\n", email)
 		password, err = SetPassword(email)
 		if err != nil {
 			return "", err

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jpabloVega/dokodemoYomou/database"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -11,6 +12,9 @@ import (
 var (
 	cfgFile     string
 	userLicense string
+
+	startFrom     int
+	chapterAmount int
 )
 
 var rootCmd = &cobra.Command{
@@ -64,5 +68,10 @@ func initConfig() {
 	if err != nil {
 		fmt.Println("Config load successfully")
 		cobra.CheckErr(err)
+	}
+
+	err = database.StartDB()
+	if err != nil {
+		fmt.Println(err)
 	}
 }

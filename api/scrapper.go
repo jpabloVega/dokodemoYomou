@@ -83,7 +83,9 @@ func GetSiteInfo(baseURL string) (UrlInfo, error) {
 		if err != nil {
 			return UrlInfo{}, err
 		}
-		startIndex = index
+		if index > 0 {
+			startIndex = index
+		}
 	}
 	fullURL := url.URL{
 		Scheme: urlS.Scheme,
@@ -159,9 +161,7 @@ func (c *Client) GetFromRange(urlData UrlInfo, chapterAmount int, ch chan Chapte
 		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
 		go c.GetSingleAddress(chapIndex, fullURL, ch, wg)
 		chapIndex++
+		time.Sleep(1 * time.Second)
 		downloadBar.Add(1)
-		if i%5 == 0 {
-			time.Sleep(1 * time.Second)
-		}
 	}
 }

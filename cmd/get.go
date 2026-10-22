@@ -27,8 +27,6 @@ const (
 var (
 	bodySize        int
 	titleSize       int
-	startFrom       int
-	chapterAmount   int
 	destinationPath string
 	fileName        string
 	oPDF            bool
@@ -43,7 +41,7 @@ func init() {
 
 	getCmd.Flags().IntVar(&bodySize, "bodysize", 14, "Size for the font of the body (only for pdf)")
 	getCmd.Flags().IntVar(&titleSize, "titlesize", 16, "Size for the font of the titles (only for pdf)")
-	getCmd.Flags().IntVarP(&chapterAmount, "amount", "a", 1, "Amount of chapters to download")
+	getCmd.Flags().IntVarP(&chapterAmount, "volumeSize", "", 10, "Amount of chapters to download")
 	getCmd.Flags().IntVar(&startFrom, "start", 0, "Start from chapter")
 	getCmd.Flags().StringVarP(&destinationPath, "saveto", "s", "pfd", "Path to the folder where pdf's are stored")
 	getCmd.Flags().StringVarP(&fileName, "name", "n", "", "Name of the newly created pdf")

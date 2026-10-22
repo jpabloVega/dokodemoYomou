@@ -22,6 +22,28 @@ type DBBook struct {
 	DownloadedAt time.Time
 }
 
+func StartDB() error {
+	configDir, _ := os.UserConfigDir()
+	appDir := filepath.Join(configDir, "Dodeyo")
+	_ = os.MkdirAll(appDir, 0755)
+	dbPath := filepath.Join(appDir, "data.db")
+
+	db, err := bbolt.Open(dbPath, 0600, &bbolt.Options{Timeout: 1 * time.Second})
+	if err != nil {
+		return fmt.Errorf("Could not open database: %v", err)
+	}
+	defer db.Close()
+
+	err = db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("Could not create bucket: %v", err)
+	}
+	return nil
+}
+
 func OpenDB() (*bbolt.DB, error) {
 	userCfgDir, err := os.UserConfigDir()
 	if err != nil {
