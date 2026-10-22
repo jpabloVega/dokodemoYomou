@@ -94,7 +94,7 @@ func GetCommand(cmd *cobra.Command, address string, c *api.Client) error {
 
 	bookExists, dbBook, err := database.GetBook(db, urlData.Url)
 	if bookExists {
-		urlData.StartIndex = dbBook.LastDownload + 1
+		urlData.StartIndex = dbBook.LastDownload
 	}
 
 	if startFrom != 0 {
@@ -247,8 +247,7 @@ func GetHTML(chaptersData []api.Chapter, bookCredits api.Credits, lineAmount int
 </body>
 </html>`, chapterTitle, authorCredit, chapterUrl)
 
-	fileNameExt := fmt.Sprintf("%v.html", fileName)
-	filePath := filepath.Join(destinationPath, fileNameExt)
+	filePath := getOrigName(destinationPath, fileName, bookCredits.Title, "html")
 
 	err := os.WriteFile(filePath, []byte(html.String()), 0644)
 	if err != nil {
@@ -340,11 +339,7 @@ func GetPDF(chapterData []api.Chapter, credits api.Credits, lineAmount int) ([]s
 	pdf.Cell(bodyRect, chapterUrl)
 	pdf.Br(40)
 
-	if fileName == "" {
-		fileName = credits.Title
-	}
-	fileNameExt := fmt.Sprintf("%v.pdf", fileName)
-	filePath := filepath.Join(destinationPath, fileNameExt)
+	filePath := getOrigName(destinationPath, fileName, credits.Title, "pdf")
 
 	err = pdf.WritePdf(filePath)
 	if err != nil {
@@ -457,8 +452,7 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) ([]
 		return nil, err
 	}
 
-	fileNameExt := fmt.Sprintf("%s.epub", fileName)
-	filePath := filepath.Join(destinationPath, fileNameExt)
+	filePath := getOrigName(destinationPath, fileName, credits.Title, "epub")
 
 	err = w.Write(filePath)
 	if err != nil {
@@ -467,4 +461,23 @@ func GetEPub(chapterData []api.Chapter, credits api.Credits, lineAmount int) ([]
 
 	fmt.Printf("Successfully created epub at: %s\n", filePath)
 	return []string{filePath}, nil
+}
+
+func getOrigName(destPath, fileName, title, ext string) string {
+	if fileName == "" {
+		fileName = title
+	}
+	counter := 1
+	fileNameExt := fmt.Sprintf("%s.%s", fileName, ext)
+	filePath := filepath.Join(destPath, fileNameExt)
+	for {
+		_, err := os.Stat(filePath)
+		if errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		fileNameExt = fmt.Sprintf("%s-%d.%s", fileName, counter, ext)
+		filePath = filepath.Join(destPath, fileNameExt)
+		counter++
+	}
+	return filePath
 }

@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -103,4 +104,31 @@ func GetBook(db *bbolt.DB, link string) (bool, *DBBook, error) {
 	}
 
 	return exists, &book, nil
+}
+
+func GetAllBooks(db *bbolt.DB) ([]DBBook, error) {
+	var books []DBBook
+	err := db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(bucketName))
+		if bucket == nil {
+			return errors.New("Bucket not found")
+		}
+
+		return bucket.ForEach(func(key, value []byte) error {
+			var book DBBook
+
+			if err := json.Unmarshal(value, &book); err != nil {
+				return err
+			}
+
+			books = append(books, book)
+			return nil
+		})
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return books, nil
 }
