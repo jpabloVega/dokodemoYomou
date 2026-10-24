@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -34,7 +35,7 @@ type Credits struct {
 	URL    string
 }
 
-func (c *Client) GetSingleAddress(index int, address string, ch chan Chapter, wg *sync.WaitGroup) {
+func (c *Client) GetSingleAddress(index int, address, userAgent string, ch chan Chapter, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	req, err := http.NewRequest("GET", address, nil)
@@ -42,7 +43,12 @@ func (c *Client) GetSingleAddress(index int, address string, ch chan Chapter, wg
 		ch <- Chapter{Err: err}
 		return
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0")
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
 
 	res, err := c.HttpClient.Do(req)
 	if err != nil {
@@ -154,14 +160,20 @@ func GetChapterData(data string, index int) (Chapter, error) {
 
 func (c *Client) GetFromRange(urlData UrlInfo, chapterAmount int, ch chan Chapter, wg *sync.WaitGroup) {
 	chapIndex := 0
+	//var userAgents = []string{
+	//"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+	//"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+	//"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+	//}
 
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
 	downloadBar := progressbar.Default(int64(chapterAmount), "Downloading chapters...")
 	for i := urlData.StartIndex; i < urlData.StartIndex+chapterAmount; i++ {
 		wg.Add(1)
 		fullURL := fmt.Sprintf("%s/%d/", urlData.Url, i)
-		go c.GetSingleAddress(chapIndex, fullURL, ch, wg)
+		go c.GetSingleAddress(chapIndex, fullURL, userAgent, ch, wg)
 		chapIndex++
-		time.Sleep(1 * time.Second)
+		time.Sleep(time.Duration(1000+rand.Intn(1000)) * time.Second)
 		downloadBar.Add(1)
 	}
 }

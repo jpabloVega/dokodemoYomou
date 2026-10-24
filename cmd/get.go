@@ -467,7 +467,7 @@ func getOrigName(destPath, fileName, title, ext string) string {
 	if fileName == "" {
 		fileName = title
 	}
-	counter := 1
+	counter := 2
 	fileNameExt := fmt.Sprintf("%s.%s", fileName, ext)
 	filePath := filepath.Join(destPath, fileNameExt)
 	for {
